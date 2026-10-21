@@ -1,0 +1,46 @@
+MSBuild version 17.14.60+43b635718 for .NET Framework
+
+  btLinearMathAll.cpp
+  btBulletCollisionAll.cpp
+  btBulletDynamicsAll.cpp
+  Generating Code...
+  crashlog.cpp
+  dllmain.cpp
+  game_build.cpp
+  game_check.cpp
+  log.cpp
+  mem_log.cpp
+  render_hooks.cpp
+  runtime_resolve.cpp
+  autospawn.cpp
+  effects_fix.cpp
+  pads.cpp
+  player2_input.cpp
+  players34.cpp
+  split_core.cpp
+  split_shadows.cpp
+  split_spawn_menus.cpp
+  vertical.cpp
+  menus.cpp
+  class_wheel.cpp
+  spawn_manager.cpp
+  Generating Code...
+  Compiling...
+  spawn_ui.cpp
+  sprint.cpp
+  stamina_hud.cpp
+  ragdoll.cpp
+  ragdoll_body.cpp
+  loadscreen.cpp
+  prone_fix.cpp
+  tex_cap.cpp
+  input_log.cpp
+  loadscreen_log.cpp
+  prone_log.cpp
+  egm.cpp
+  bf1memext_loader.cpp
+  limits.cpp
+  addons.cpp
+  Generating Code...
+     Creating library D:\a\BF1RoguexKade\BF1RoguexKade\bin\Release\dinput8.lib and object D:\a\BF1RoguexKade\BF1RoguexKade\bin\Release\dinput8.exp
+  BF1GameExt.vcxproj -> D:\a\BF1RoguexKade\BF1RoguexKade\bin\Release\dinput8.dll
