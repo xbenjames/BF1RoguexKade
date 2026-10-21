@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- BF1GameExt.vcxproj (file build p23a-r1): v6.3 - the source reorganised into folders by who wrote what (src\mr_rogue\core, splitscreen, menus, spawn, sprint, ragdoll, fixes, diagnostics; src\kade_fett; src\antstafer_abkarino_egm; src\bf1memext; third_party\bullet3; console_lvl, config, tools - those three and the README / CREDITS files listed for Solution Explorer only, nothing builds them) and the _scan files renamed; every source folder on the include path, so the #include lines only changed for the renamed headers. Nothing else changed. -->
+  <!-- BF1GameExt.vcxproj (file build p22d-r1): tex_cap.cpp / tex_cap.hpp added (22d, the texture cap). p22c-r1: mem_log.cpp / mem_log.hpp added (22c, the memory log). p22a-r1: egm_scan.cpp / egm_scan.hpp added (22a, EGM's patches - the scan). p20a-r1: playern_scan.cpp / playern_scan.hpp added (20a, the 4-player map). p18s-r1: p2spawn_scan.cpp / p2spawn_scan.hpp added -->
+  <!-- BF1GameExt p18a-r1: adds classwheel_scan.cpp / classwheel_scan.hpp (class wheel scan, log-only). p16a-r1: adds limits_scan.cpp / limits_scan.hpp (BF1MemExt limits scan). p15c-r1: adds ragdoll_body.cpp / ragdoll_body.hpp (the ragdoll physics). p15a-r2: added ragdoll.cpp / ragdoll.hpp and Bullet 3.25 (bullet3\src, its 3 single-file builds; stamina_hud since p14c, sprint since p14a). r2: __BT_DISABLE_SSE__ (Bullet's SSE path breaks its single-file builds under Visual Studio) -->
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{6E776ED6-5474-4F7F-87FE-4948E3E49E78}</ProjectGuid>
+    <RootNamespace>BF1GameExt</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <TargetName>dinput8</TargetName>
+    <OutDir>$(SolutionDir)bin\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)obj\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_USRDLL;__BT_DISABLE_SSE__;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir)src\mr_rogue\core;$(ProjectDir)src\mr_rogue\splitscreen;$(ProjectDir)src\mr_rogue\menus;$(ProjectDir)src\mr_rogue\spawn;$(ProjectDir)src\mr_rogue\sprint;$(ProjectDir)src\mr_rogue\ragdoll;$(ProjectDir)src\mr_rogue\fixes;$(ProjectDir)src\mr_rogue\diagnostics;$(ProjectDir)src\kade_fett;$(ProjectDir)src\antstafer_abkarino_egm;$(ProjectDir)src\bf1memext;$(ProjectDir)src\ben;$(ProjectDir)third_party\bullet3\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableUAC>false</EnableUAC>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="third_party\bullet3\src\btLinearMathAll.cpp">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <ConformanceMode>false</ConformanceMode>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="third_party\bullet3\src\btBulletCollisionAll.cpp">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <ConformanceMode>false</ConformanceMode>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="third_party\bullet3\src\btBulletDynamicsAll.cpp">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <ConformanceMode>false</ConformanceMode>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="src\mr_rogue\core\crashlog.cpp" />
+    <ClCompile Include="src\mr_rogue\core\dllmain.cpp" />
+    <ClCompile Include="src\mr_rogue\core\game_build.cpp" />
+    <ClCompile Include="src\mr_rogue\core\game_check.cpp" />
+    <ClCompile Include="src\mr_rogue\core\log.cpp" />
+    <ClCompile Include="src\mr_rogue\core\mem_log.cpp" />
+    <ClCompile Include="src\mr_rogue\core\render_hooks.cpp" />
+    <ClCompile Include="src\mr_rogue\core\runtime_resolve.cpp" />
+    <ClCompile Include="src\mr_rogue\splitscreen\autospawn.cpp" />
+    <ClCompile Include="src\mr_rogue\splitscreen\effects_fix.cpp" />
+    <ClCompile Include="src\mr_rogue\splitscreen\pads.cpp" />
+    <ClCompile Include="src\mr_rogue\splitscreen\player2_input.cpp" />
+    <ClCompile Include="src\mr_rogue\splitscreen\players34.cpp" />
+    <ClCompile Include="src\mr_rogue\splitscreen\split_core.cpp" />
+    <ClCompile Include="src\mr_rogue\splitscreen\split_shadows.cpp" />
+    <ClCompile Include="src\mr_rogue\splitscreen\split_spawn_menus.cpp" />
+    <ClCompile Include="src\mr_rogue\splitscreen\vertical.cpp" />
+    <ClCompile Include="src\mr_rogue\menus\menus.cpp" />
+    <ClCompile Include="src\mr_rogue\spawn\class_wheel.cpp" />
+    <ClCompile Include="src\mr_rogue\spawn\spawn_manager.cpp" />
+    <ClCompile Include="src\mr_rogue\spawn\spawn_ui.cpp" />
+    <ClCompile Include="src\mr_rogue\sprint\sprint.cpp" />
+    <ClCompile Include="src\mr_rogue\sprint\stamina_hud.cpp" />
+    <ClCompile Include="src\mr_rogue\ragdoll\ragdoll.cpp" />
+    <ClCompile Include="src\mr_rogue\ragdoll\ragdoll_body.cpp" />
+    <ClCompile Include="src\mr_rogue\fixes\loadscreen.cpp" />
+    <ClCompile Include="src\mr_rogue\fixes\prone_fix.cpp" />
+    <ClCompile Include="src\mr_rogue\fixes\tex_cap.cpp" />
+    <ClCompile Include="src\mr_rogue\diagnostics\input_log.cpp" />
+    <ClCompile Include="src\mr_rogue\diagnostics\loadscreen_log.cpp" />
+    <ClCompile Include="src\mr_rogue\diagnostics\prone_log.cpp" />
+    <ClCompile Include="src\antstafer_abkarino_egm\egm.cpp" />
+    <ClCompile Include="src\bf1memext\bf1memext_loader.cpp" />
+    <ClCompile Include="src\bf1memext\limits.cpp" />
+    <ClCompile Include="src\ben\addons.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\mr_rogue\core\crashlog.hpp" />
+    <ClInclude Include="src\mr_rogue\core\game_build.hpp" />
+    <ClInclude Include="src\mr_rogue\core\game_check.hpp" />
+    <ClInclude Include="src\mr_rogue\core\log.hpp" />
+    <ClInclude Include="src\mr_rogue\core\mem_log.hpp" />
+    <ClInclude Include="src\mr_rogue\core\render_hooks.hpp" />
+    <ClInclude Include="src\mr_rogue\core\runtime_resolve.hpp" />
+    <ClInclude Include="src\mr_rogue\splitscreen\autospawn.hpp" />
+    <ClInclude Include="src\mr_rogue\splitscreen\effects_fix.hpp" />
+    <ClInclude Include="src\mr_rogue\splitscreen\pads.hpp" />
+    <ClInclude Include="src\mr_rogue\splitscreen\player2_input.hpp" />
+    <ClInclude Include="src\mr_rogue\splitscreen\players34.hpp" />
+    <ClInclude Include="src\mr_rogue\splitscreen\split_core.hpp" />
+    <ClInclude Include="src\mr_rogue\splitscreen\split_shadows.hpp" />
+    <ClInclude Include="src\mr_rogue\splitscreen\split_spawn_menus.hpp" />
+    <ClInclude Include="src\mr_rogue\splitscreen\vertical.hpp" />
+    <ClInclude Include="src\mr_rogue\menus\menus.hpp" />
+    <ClInclude Include="src\mr_rogue\spawn\class_wheel.hpp" />
+    <ClInclude Include="src\mr_rogue\spawn\spawn_manager.hpp" />
+    <ClInclude Include="src\mr_rogue\spawn\spawn_ui.hpp" />
+    <ClInclude Include="src\mr_rogue\sprint\sprint.hpp" />
+    <ClInclude Include="src\mr_rogue\sprint\stamina_hud.hpp" />
+    <ClInclude Include="src\mr_rogue\ragdoll\ragdoll.hpp" />
+    <ClInclude Include="src\mr_rogue\ragdoll\ragdoll_body.hpp" />
+    <ClInclude Include="src\mr_rogue\fixes\loadscreen.hpp" />
+    <ClInclude Include="src\mr_rogue\fixes\prone_fix.hpp" />
+    <ClInclude Include="src\mr_rogue\fixes\tex_cap.hpp" />
+    <ClInclude Include="src\mr_rogue\diagnostics\input_log.hpp" />
+    <ClInclude Include="src\mr_rogue\diagnostics\loadscreen_log.hpp" />
+    <ClInclude Include="src\mr_rogue\diagnostics\prone_log.hpp" />
+    <ClInclude Include="src\antstafer_abkarino_egm\egm.hpp" />
+    <ClInclude Include="src\bf1memext\bf1memext_loader.hpp" />
+    <ClInclude Include="src\bf1memext\limits.hpp" />
+    <ClInclude Include="src\ben\addons.hpp" />
+    <ClInclude Include="src\ben\bfx_addon.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="README.txt" />
+    <None Include="src\kade_fett\CHANGES.txt" />
+    <None Include="src\kade_fett\original\README.txt" />
+    <None Include="src\antstafer_abkarino_egm\CREDITS.txt" />
+    <None Include="src\bf1memext\CREDITS.txt" />
+    <None Include="console_lvl\BF1GameExt_ctrlpage.lua" />
+    <None Include="console_lvl\BF1GameExt_pause34.lua" />
+    <None Include="console_lvl\BF1GameExt_split.lua" />
+    <None Include="config\BF1GameExt.ini" />
+    <None Include="tools\BF1GameExt_4GB.bat" />
+    <None Include="tools\BF1GameExt_4GB.ps1" />
+    <None Include="third_party\bullet3\LICENSE.txt" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

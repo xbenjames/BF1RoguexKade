@@ -1,0 +1,13 @@
+Kade Fett's fixes - src\kade_fett
+
+original\     Kade's code exactly as he sent it. Kept for credit and for comparing when he sends an update.
+              Never built and never edited.
+src\kade_fett\ (this folder)
+              the version that is built: his code adapted to work with BF1GameExt's split screen (up to 4 players).
+
+Every change made to his code goes in the list below: the file, what changed, and why.
+When Kade sends an update, compare it with original\, redo only what changed, then replace original\ with it.
+
+CHANGES
+-------
+(none yet - waiting for Kade's code)

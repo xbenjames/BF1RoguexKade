@@ -1,0 +1,328 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- BF1GameExt.vcxproj.filters (file build p23a-r1): v6.3 - Solution Explorer's folders are the real folders on disk (src\mr_rogue\..., src\kade_fett, src\antstafer_abkarino_egm, src\bf1memext, third_party\bullet3, console_lvl, config, tools). -->
+  <ItemGroup>
+    <Filter Include="config">
+      <UniqueIdentifier>{4BB712B6-A46F-54FA-B419-E03AC7112B31}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="console_lvl">
+      <UniqueIdentifier>{79F8C08B-661B-5DA7-97F1-75568134543B}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src">
+      <UniqueIdentifier>{E5E175D2-DC25-517C-8562-80867CED6ED7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\antstafer_abkarino_egm">
+      <UniqueIdentifier>{2A6AD31A-009A-5238-9DFF-675AB9A099F1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\ben">
+      <UniqueIdentifier>{b3b3b3b3-0000-4000-8000-00000000be01}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\bf1memext">
+      <UniqueIdentifier>{9B7BDE34-03B3-5738-B748-A862086E8CEF}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\kade_fett">
+      <UniqueIdentifier>{2A95DDF5-69C8-527C-A6B2-728BF5B0EADA}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\kade_fett\original">
+      <UniqueIdentifier>{0F96436E-6BC3-529B-8BFD-6A00E9CD0F05}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\mr_rogue">
+      <UniqueIdentifier>{F65388E0-9C9E-595A-A280-6F5FCA828FF8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\mr_rogue\core">
+      <UniqueIdentifier>{421F45FC-515A-5CC0-9151-B7E918F74D98}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\mr_rogue\diagnostics">
+      <UniqueIdentifier>{B602B6D6-ACCD-574E-A373-8E4D7CEEB21A}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\mr_rogue\fixes">
+      <UniqueIdentifier>{EAF84193-E9C3-5BD3-A740-27B7567055D1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\mr_rogue\menus">
+      <UniqueIdentifier>{BEEAA764-EFD9-5864-B178-366A55CBDB95}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\mr_rogue\ragdoll">
+      <UniqueIdentifier>{70ADEF84-71CB-5FFC-8A93-D1FDFFF400E1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\mr_rogue\spawn">
+      <UniqueIdentifier>{A02E3FA5-739B-5694-87AB-169172610444}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\mr_rogue\splitscreen">
+      <UniqueIdentifier>{40804911-72F1-5F80-9FF1-F1FD741289F3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\mr_rogue\sprint">
+      <UniqueIdentifier>{ED6AD58E-3040-5924-8D79-9131CC9DDBBF}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="third_party">
+      <UniqueIdentifier>{BE619E88-45D6-59FC-9449-AA090D7032DB}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="third_party\bullet3">
+      <UniqueIdentifier>{EF4F9293-E6F1-5A8B-B728-BC339F2C4B77}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="third_party\bullet3\src">
+      <UniqueIdentifier>{182EEC80-1D37-582C-A27C-74C1F0C7D319}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="tools">
+      <UniqueIdentifier>{CCC62D61-10B7-5086-A072-C3918FA1A2E5}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="third_party\bullet3\src\btLinearMathAll.cpp">
+      <Filter>third_party\bullet3\src</Filter>
+    </ClCompile>
+    <ClCompile Include="third_party\bullet3\src\btBulletCollisionAll.cpp">
+      <Filter>third_party\bullet3\src</Filter>
+    </ClCompile>
+    <ClCompile Include="third_party\bullet3\src\btBulletDynamicsAll.cpp">
+      <Filter>third_party\bullet3\src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mr_rogue\core\crashlog.cpp">
+      <Filter>src\mr_rogue\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mr_rogue\core\dllmain.cpp">
+      <Filter>src\mr_rogue\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mr_rogue\core\game_build.cpp">
+      <Filter>src\mr_rogue\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mr_rogue\core\game_check.cpp">
+      <Filter>src\mr_rogue\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mr_rogue\core\log.cpp">
+      <Filter>src\mr_rogue\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mr_rogue\core\mem_log.cpp">
+      <Filter>src\mr_rogue\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mr_rogue\core\render_hooks.cpp">
+      <Filter>src\mr_rogue\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mr_rogue\core\runtime_resolve.cpp">
+      <Filter>src\mr_rogue\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mr_rogue\splitscreen\autospawn.cpp">
+      <Filter>src\mr_rogue\splitscreen</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mr_rogue\splitscreen\effects_fix.cpp">
+      <Filter>src\mr_rogue\splitscreen</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mr_rogue\splitscreen\pads.cpp">
+      <Filter>src\mr_rogue\splitscreen</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mr_rogue\splitscreen\player2_input.cpp">
+      <Filter>src\mr_rogue\splitscreen</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mr_rogue\splitscreen\players34.cpp">
+      <Filter>src\mr_rogue\splitscreen</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mr_rogue\splitscreen\split_core.cpp">
+      <Filter>src\mr_rogue\splitscreen</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mr_rogue\splitscreen\split_shadows.cpp">
+      <Filter>src\mr_rogue\splitscreen</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mr_rogue\splitscreen\split_spawn_menus.cpp">
+      <Filter>src\mr_rogue\splitscreen</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mr_rogue\splitscreen\vertical.cpp">
+      <Filter>src\mr_rogue\splitscreen</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mr_rogue\menus\menus.cpp">
+      <Filter>src\mr_rogue\menus</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mr_rogue\spawn\class_wheel.cpp">
+      <Filter>src\mr_rogue\spawn</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mr_rogue\spawn\spawn_manager.cpp">
+      <Filter>src\mr_rogue\spawn</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mr_rogue\spawn\spawn_ui.cpp">
+      <Filter>src\mr_rogue\spawn</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mr_rogue\sprint\sprint.cpp">
+      <Filter>src\mr_rogue\sprint</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mr_rogue\sprint\stamina_hud.cpp">
+      <Filter>src\mr_rogue\sprint</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mr_rogue\ragdoll\ragdoll.cpp">
+      <Filter>src\mr_rogue\ragdoll</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mr_rogue\ragdoll\ragdoll_body.cpp">
+      <Filter>src\mr_rogue\ragdoll</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mr_rogue\fixes\loadscreen.cpp">
+      <Filter>src\mr_rogue\fixes</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mr_rogue\fixes\prone_fix.cpp">
+      <Filter>src\mr_rogue\fixes</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mr_rogue\fixes\tex_cap.cpp">
+      <Filter>src\mr_rogue\fixes</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mr_rogue\diagnostics\input_log.cpp">
+      <Filter>src\mr_rogue\diagnostics</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mr_rogue\diagnostics\loadscreen_log.cpp">
+      <Filter>src\mr_rogue\diagnostics</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mr_rogue\diagnostics\prone_log.cpp">
+      <Filter>src\mr_rogue\diagnostics</Filter>
+    </ClCompile>
+    <ClCompile Include="src\antstafer_abkarino_egm\egm.cpp">
+      <Filter>src\antstafer_abkarino_egm</Filter>
+    </ClCompile>
+    <ClCompile Include="src\bf1memext\bf1memext_loader.cpp">
+      <Filter>src\bf1memext</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ben\addons.cpp">
+      <Filter>src\ben</Filter>
+    </ClCompile>
+    <ClCompile Include="src\bf1memext\limits.cpp">
+      <Filter>src\bf1memext</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\mr_rogue\core\crashlog.hpp">
+      <Filter>src\mr_rogue\core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mr_rogue\core\game_build.hpp">
+      <Filter>src\mr_rogue\core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mr_rogue\core\game_check.hpp">
+      <Filter>src\mr_rogue\core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mr_rogue\core\log.hpp">
+      <Filter>src\mr_rogue\core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mr_rogue\core\mem_log.hpp">
+      <Filter>src\mr_rogue\core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mr_rogue\core\render_hooks.hpp">
+      <Filter>src\mr_rogue\core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mr_rogue\core\runtime_resolve.hpp">
+      <Filter>src\mr_rogue\core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mr_rogue\splitscreen\autospawn.hpp">
+      <Filter>src\mr_rogue\splitscreen</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mr_rogue\splitscreen\effects_fix.hpp">
+      <Filter>src\mr_rogue\splitscreen</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mr_rogue\splitscreen\pads.hpp">
+      <Filter>src\mr_rogue\splitscreen</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mr_rogue\splitscreen\player2_input.hpp">
+      <Filter>src\mr_rogue\splitscreen</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mr_rogue\splitscreen\players34.hpp">
+      <Filter>src\mr_rogue\splitscreen</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mr_rogue\splitscreen\split_core.hpp">
+      <Filter>src\mr_rogue\splitscreen</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mr_rogue\splitscreen\split_shadows.hpp">
+      <Filter>src\mr_rogue\splitscreen</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mr_rogue\splitscreen\split_spawn_menus.hpp">
+      <Filter>src\mr_rogue\splitscreen</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mr_rogue\splitscreen\vertical.hpp">
+      <Filter>src\mr_rogue\splitscreen</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mr_rogue\menus\menus.hpp">
+      <Filter>src\mr_rogue\menus</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mr_rogue\spawn\class_wheel.hpp">
+      <Filter>src\mr_rogue\spawn</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mr_rogue\spawn\spawn_manager.hpp">
+      <Filter>src\mr_rogue\spawn</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mr_rogue\spawn\spawn_ui.hpp">
+      <Filter>src\mr_rogue\spawn</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mr_rogue\sprint\sprint.hpp">
+      <Filter>src\mr_rogue\sprint</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mr_rogue\sprint\stamina_hud.hpp">
+      <Filter>src\mr_rogue\sprint</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mr_rogue\ragdoll\ragdoll.hpp">
+      <Filter>src\mr_rogue\ragdoll</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mr_rogue\ragdoll\ragdoll_body.hpp">
+      <Filter>src\mr_rogue\ragdoll</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mr_rogue\fixes\loadscreen.hpp">
+      <Filter>src\mr_rogue\fixes</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mr_rogue\fixes\prone_fix.hpp">
+      <Filter>src\mr_rogue\fixes</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mr_rogue\fixes\tex_cap.hpp">
+      <Filter>src\mr_rogue\fixes</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mr_rogue\diagnostics\input_log.hpp">
+      <Filter>src\mr_rogue\diagnostics</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mr_rogue\diagnostics\loadscreen_log.hpp">
+      <Filter>src\mr_rogue\diagnostics</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mr_rogue\diagnostics\prone_log.hpp">
+      <Filter>src\mr_rogue\diagnostics</Filter>
+    </ClInclude>
+    <ClInclude Include="src\antstafer_abkarino_egm\egm.hpp">
+      <Filter>src\antstafer_abkarino_egm</Filter>
+    </ClInclude>
+    <ClInclude Include="src\bf1memext\bf1memext_loader.hpp">
+      <Filter>src\bf1memext</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ben\addons.hpp">
+      <Filter>src\ben</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ben\bfx_addon.h">
+      <Filter>src\ben</Filter>
+    </ClInclude>
+    <ClInclude Include="src\bf1memext\limits.hpp">
+      <Filter>src\bf1memext</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="README.txt" />
+    <None Include="src\kade_fett\CHANGES.txt">
+      <Filter>src\kade_fett</Filter>
+    </None>
+    <None Include="src\kade_fett\original\README.txt">
+      <Filter>src\kade_fett\original</Filter>
+    </None>
+    <None Include="src\antstafer_abkarino_egm\CREDITS.txt">
+      <Filter>src\antstafer_abkarino_egm</Filter>
+    </None>
+    <None Include="src\bf1memext\CREDITS.txt">
+      <Filter>src\bf1memext</Filter>
+    </None>
+    <None Include="console_lvl\BF1GameExt_ctrlpage.lua">
+      <Filter>console_lvl</Filter>
+    </None>
+    <None Include="console_lvl\BF1GameExt_pause34.lua">
+      <Filter>console_lvl</Filter>
+    </None>
+    <None Include="console_lvl\BF1GameExt_split.lua">
+      <Filter>console_lvl</Filter>
+    </None>
+    <None Include="config\BF1GameExt.ini">
+      <Filter>config</Filter>
+    </None>
+    <None Include="tools\BF1GameExt_4GB.bat">
+      <Filter>tools</Filter>
+    </None>
+    <None Include="tools\BF1GameExt_4GB.ps1">
+      <Filter>tools</Filter>
+    </None>
+    <None Include="third_party\bullet3\LICENSE.txt">
+      <Filter>third_party\bullet3</Filter>
+    </None>
+  </ItemGroup>
+</Project>

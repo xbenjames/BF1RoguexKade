@@ -1,0 +1,11 @@
+EGM's patches - src\antstafer_abkarino_egm
+
+The patches in egm.cpp come from EGM, the SWBF Launcher by Antstafer and abkarino, released under the
+Creative Commons Attribution-NonCommercial 4.0 licence (CC BY-NC 4.0):
+https://creativecommons.org/licenses/by-nc/4.0/
+
+That licence means: credit Antstafer and abkarino wherever this is shared, and never sell it.
+
+egm.cpp re-creates EGM's patches inside BF1GameExt (no patched exe): each group of patches behind its own
+BF1GameExt.ini [EGM] setting, found in the game's code by byte patterns on GOG 1.3 and Steam. The patches
+themselves - what to change and to what - are Antstafer and abkarino's work. Brought into BF1GameExt by Mr. Rogue.

@@ -1,0 +1,10 @@
+ucft
+{
+    REQN
+    {
+        "script"
+        "BF1GameExt_ctrlpage"
+        "BF1GameExt_pause34"
+        "BF1GameExt_split"
+    }
+}

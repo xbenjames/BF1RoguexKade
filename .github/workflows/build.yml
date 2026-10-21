@@ -1,0 +1,24 @@
+name: build dinput8.dll
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: microsoft/setup-msbuild@v2
+      - name: Build Release Win32
+        run: msbuild BF1GameExt.sln /m /p:Configuration=Release /p:Platform=Win32 /v:minimal
+      - name: Collect
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item bin\Release\dinput8.dll out\
+          Copy-Item bin\Release\dinput8.pdb out\ -ErrorAction SilentlyContinue
+          Get-FileHash out\dinput8.dll -Algorithm MD5 | Format-List | Out-File out\dinput8.md5.txt
+          (Get-Item out\dinput8.dll).Length | Out-File out\dinput8.size.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dinput8
+          path: out/

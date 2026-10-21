@@ -1,0 +1,11 @@
+The extended limits - src\bf1memext
+
+limits.cpp            BF1MemExt's limit patches ([Limits] Heaps, HiResUnits, MatrixPool, DLCMissions), brought into
+                      BF1GameExt so they work on GOG 1.3 and Steam (BF1MemExt itself only supports GOG 1.2),
+                      plus BF1GameExt's own addition: [Limits] MainHeapMB.
+bf1memext_loader.cpp  on GOG 1.2 only: loads BF1MemExt.dll itself at the game's start, without patching the exe.
+
+Credit:
+  BF1MemExt's author(s) - the extended limits patch.
+  Dark_Phantom - his extended limits were the first ones used with BF1GameExt after its split screen went in.
+Brought into BF1GameExt by Mr. Rogue.
