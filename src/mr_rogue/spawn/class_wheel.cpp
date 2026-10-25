@@ -4773,12 +4773,35 @@ void ClassWheelFrame(uintptr_t sd, const char* screen)
         b = true;
         click = false;
     }
+    // v6.6 (p25b): a click on the score bar at the top of the spawn point / soldier screens = CHOOSE YOUR SIDE (the PC spawn
+    // screen switched sides with its side icons up there; the console flow only had B / BACK on the spawn point screen)
+    bool sideClick = false;
+    if (click && (flow == 2 || flow == 3) && g_mouse.ok && g_mouse.y < RefH() * 0.17f &&
+        std::fabs(g_mouse.x - g_mouse.w * 0.5f) < g_mouse.w * 0.25f)
+    {
+        sideClick = true;
+        click = false;
+    }
 
     // 21f: sides locked: no side screen (ClassWheelPreviewScreenImpl moves the flow on before it is shown; this is the
     // frame it may already be up)
     if (flow == 1 && SidesLockedNow() == 1)
     {
         SetFlow(3, "sides are locked (campaign / Galactic Conquest: the game's side) - no side screen");
+        return;
+    }
+    if (sideClick)
+    {
+        if (SidesLockedNow() == 1)
+        {
+            if (DriverBudget())
+                Log("[wheel] %lu ms: flow: click on the score bar - sides are locked, no side screen", ScanMsSinceAttach());
+        }
+        else
+        {
+            PlayUiSound(g_sndBack);
+            SetFlow(1, "click on the score bar (change side)");
+        }
         return;
     }
     // 18j: the console order - side (1) -> spawn point (3) -> soldier select (2) -> spawn
