@@ -2761,12 +2761,47 @@ float SideStep(int n, const SideLook& look)
 }
 // v6.5: the place of side i of n: its soldier (of the screen width, from the soldiers' centre) and its name (of the
 // reference width, from the screen centre); n = 2 gives the stock places
+// v6.7: more than 4 sides - two rows: 4 on the top row, the rest below (each row centred, smaller soldiers)
+constexpr float kRowTopFeet = 0.49f, kRowTopLabel = 0.525f;  // of the screen height
+constexpr float kRowLowFeet = 0.85f, kRowLowLabel = 0.885f;
+constexpr float kTwoRowSize = 0.58f;                         // the soldiers' size against the 4-side row
+bool SideTwoRows(int n)
+{
+    return n > 4;
+}
+void SideCell(int i, int n, int* col, int* cols, int* row)
+{
+    if (SideTwoRows(n))
+    {
+        *row = i < 4 ? 0 : 1;
+        *col = i < 4 ? i : i - 4;
+        *cols = i < 4 ? 4 : n - 4;
+        return;
+    }
+    *row = 0;
+    *col = i;
+    *cols = n;
+}
+float SideFeetY(int i, int n, const SideLook& look)
+{
+    if (!SideTwoRows(n))
+        return look.feet;
+    return i < 4 ? kRowTopFeet : kRowLowFeet;
+}
+float SideLabelY(int i, int n, const SideLook& look)
+{
+    if (!SideTwoRows(n))
+        return look.labelY;
+    return i < 4 ? kRowTopLabel : kRowLowLabel;
+}
 float SideOffset(int i, int n, const SideLook& look)
 {
     if (n <= 2)
         return i == 0 ? -look.x : look.x;
-    const float step = SideStep(n, look);
-    return (static_cast<float>(i) - 0.5f * static_cast<float>(n - 1)) * step;
+    int col = 0, cols = n, row = 0;
+    SideCell(i, n, &col, &cols, &row);
+    const float step = SideStep(SideTwoRows(n) ? 4 : n, look);
+    return (static_cast<float>(col) - 0.5f * static_cast<float>(cols - 1)) * step;
 }
 float SideLabelOffset(int i, int n, const SideLook& look)
 {
@@ -2778,6 +2813,8 @@ float SideSizeK(int n, const SideLook& look)
 {
     if (n <= 2)
         return 1.0f;
+    if (SideTwoRows(n))
+        return SideSizeK(4, look) * kTwoRowSize;
     const float step = SideStep(n, look);
     return (step / (2.0f * look.x) > 0.45f ? step / (2.0f * look.x) : 0.45f);
 }
@@ -3048,7 +3085,7 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
                 swprintf(name, 48, L"SIDE %d", g_side.team[i]);
             // the name under the soldier, in the text group (centre-anchored, reference units, y down)
             const float lx = hzTexts ? hzNameX[i] : (look.textX + SideLabelOffset(i, g_side.count, look)) * RefW();
-            const float ly = hzTexts ? hzNameY : (look.labelY - 0.5f) * RefH();
+            const float ly = hzTexts ? hzNameY : (SideLabelY(i, g_side.count, look) - 0.5f) * RefH(); // v6.7: its row
             g_side.label[i] = TextNew(sd + kSdTextGroup, "gamefont_large", name, lx, ly,
                                       hzTexts ? kHzTextScale : g_sideTextScale * SideTextK(g_side.count), kZText);
             char a8[48] = {};
@@ -3109,14 +3146,14 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
     for (int i = 0; i < nSides && !g_side.look && !hz; ++i) // (20g-r10: not in players 3 / 4's look - no boxes of ours; 20g-r12: nor horizontal)
     {
         const float x = 0.5f * W + look.center * W + SideOffset(i, nSides, look) * W;
-        const float y = look.feet * H;
+        const float y = SideFeetY(i, nSides, look) * H; // v6.7: its row
         const ElemBase& b = g_side.droideka[i] ? db : sb;
         float x0, y0, x1, y1;
         SoldierBox(x, y, b.f80 * look.size * sizeK * (g_side.droideka[i] ? g_dekaSize : 1.0f), g_side.droideka[i], &x0, &y0, &x1,
                    &y1);
         // the name under the soldier (centre-anchored text group: x from the centre, y from the top)
         const float nx = g_mouse.w * 0.5f + (look.textX + SideLabelOffset(i, nSides, look)) * RefW();
-        const float ny = look.labelY * RefH();
+        const float ny = SideLabelY(i, nSides, look) * RefH();
         if (MouseIn(x0, y0, x1, y1) || MouseIn(nx - nameHalfW, ny - 22.0f, nx + nameHalfW, ny + 22.0f))
             hover = i;
         const float b8[8] = { x0, y0, x1, y1, nx - nameHalfW, ny - 22.0f, nx + nameHalfW, ny + 22.0f };
@@ -3204,7 +3241,7 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
         const ElemBase& b = g_side.droideka[i] ? db : sb;
         const float k = sb.s / b.s;
         const float x = (hzModels && i < 2) ? hzModelX[i] : 0.5f * W + look.center * W + SideOffset(i, nSides, look) * W; // 20g-r12
-        const float y = hzModels ? hzModelY : look.feet * H;
+        const float y = hzModels ? hzModelY : SideFeetY(i, nSides, look) * H; // v6.7: its row
         float* const m = reinterpret_cast<float*>(e + kElemMatrix);
         for (int j = 0; j < 12; ++j)
             m[j] = b.matrix[j];
