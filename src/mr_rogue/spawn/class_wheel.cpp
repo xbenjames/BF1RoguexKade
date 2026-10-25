@@ -2662,15 +2662,20 @@ bool RingAtRest()
 // screen's own texts are), made with its constructor, font, string and justify functions, in the
 // same draw group as the soldiers; everything is deleted when the side screen goes (or before
 // the spawn screen itself is deleted).
+// v6.5 (Kade, Oct 25 2026): up to 7 sides - Mashup Conquest (dinput8_BF1Modes.dll) offers every team of the match
+// (REP / CIS / ALL / IMP and the map's locals); any other match the two stock ones, laid out exactly as before
+constexpr int kMaxSides = 7;
 struct Side
 {
     uintptr_t sd = 0;
-    uintptr_t model[2] = {};
-    bool droideka[2] = {};
+    uintptr_t model[kMaxSides] = {};
+    bool droideka[kMaxSides] = {};
     uintptr_t title = 0;      // our texts, in the spawn screen's text group (+300h)
-    uintptr_t label[2] = {};
-    wchar_t name[2][48] = {};
-    int pick = 0;          // 0 = team 1, 1 = team 2
+    uintptr_t label[kMaxSides] = {};
+    wchar_t name[kMaxSides][48] = {};
+    int team[kMaxSides] = {}; // v6.5: the team each side joins (1, 2 stock; Mashup: 1 - 7)
+    int count = 2;            // v6.5: how many sides (2 stock)
+    int pick = 0;          // the index of the picked side (stock: 0 = team 1, 1 = team 2)
     bool made = false;
     bool hidGame = false;  // the game's own soldier is hidden by the side screen
     bool failLogged = false;
@@ -2680,6 +2685,33 @@ struct Side
     DWORD lookAt = 0;         //            its last frame (ClassWheelP1Look)
 };
 Side g_side;
+
+// v6.5: the sides of this match: BF1Modes.dll's BF1Modes_SideTeams (Mashup Conquest: every playable team, 2 - 7), else
+// teams 1 and 2. A Mashup side screen is the 1-player one only (split screen keeps its two-side layouts).
+typedef int(__cdecl* SideTeams_t)(int* teams, int max);
+int SideTeamsNow(int* teams)
+{
+    static SideTeams_t fn = nullptr;
+    static bool looked = false;
+    if (!looked)
+    {
+        looked = true;
+        const HMODULE m = GetModuleHandleA("dinput8_BF1Modes.dll");
+        if (m)
+            fn = reinterpret_cast<SideTeams_t>(GetProcAddress(m, "BF1Modes_SideTeams"));
+        Log("[wheel] side screen: dinput8_BF1Modes.dll %s", fn ? "found - Mashup Conquest can offer up to 7 sides" :
+                                                              (m ? "loaded but has no BF1Modes_SideTeams" : "not loaded - two sides"));
+    }
+    if (fn)
+    {
+        const int n = fn(teams, kMaxSides);
+        if (n >= 3 && n <= kMaxSides)
+            return n;
+    }
+    teams[0] = 1;
+    teams[1] = 2;
+    return 2;
+}
 bool g_sideLookAllowed = false; // 20g-r10: split_spawn_menus.cpp can draw player 1's side screen in players 3 / 4's look
 int g_sideLookLines = 0;
 float g_sideSize = 0.75f;   // the side soldiers' size (1 = the game's own soldier's size)
@@ -2722,6 +2754,37 @@ SideLook SideLookNow()
     return { g_sideSize, g_sideX, g_sideCenter, g_sideFeet, g_sideLabelX, g_sideLabelY, g_sideTitleY, 0.0f };
 }
 
+float SideStep(int n, const SideLook& look)
+{
+    const float a = 2.0f * look.x, b = 0.80f / static_cast<float>(n - 1);
+    return a < b ? a : b;
+}
+// v6.5: the place of side i of n: its soldier (of the screen width, from the soldiers' centre) and its name (of the
+// reference width, from the screen centre); n = 2 gives the stock places
+float SideOffset(int i, int n, const SideLook& look)
+{
+    if (n <= 2)
+        return i == 0 ? -look.x : look.x;
+    const float step = SideStep(n, look);
+    return (static_cast<float>(i) - 0.5f * static_cast<float>(n - 1)) * step;
+}
+float SideLabelOffset(int i, int n, const SideLook& look)
+{
+    if (n <= 2)
+        return i == 0 ? -look.labelX : look.labelX;
+    return SideOffset(i, n, look) * (look.labelX / look.x);
+}
+float SideSizeK(int n, const SideLook& look)
+{
+    if (n <= 2)
+        return 1.0f;
+    const float step = SideStep(n, look);
+    return (step / (2.0f * look.x) > 0.45f ? step / (2.0f * look.x) : 0.45f);
+}
+float SideTextK(int n)
+{
+    return n <= 3 ? 1.0f : (n <= 5 ? 0.8f : 0.65f);
+}
 bool TextOk()
 {
     return g_txCtor && g_txFont && g_txJustify && g_setTextW;
@@ -2835,7 +2898,7 @@ uintptr_t ClassElementNew(uintptr_t sd, uintptr_t cls, const ElemBase& sb, bool 
 void SideClear(const char* why, uintptr_t sdAlive)
 {
     int n = 0;
-    for (int i = 0; i < 2; ++i)
+    for (int i = 0; i < kMaxSides; ++i)
     {
         if (g_side.model[i])
         {
@@ -2850,7 +2913,7 @@ void SideClear(const char* why, uintptr_t sdAlive)
         ++n;
     }
     g_side.title = 0;
-    for (int t = 0; t < 2; ++t)
+    for (int t = 0; t < kMaxSides; ++t)
     {
         if (g_side.label[t])
         {
@@ -2913,6 +2976,9 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
     if (!g_side.made && look34)
     {
         const uint32_t shown = ReadU32(sd + kTailStart + 4 * kIdxTeamShown);
+        g_side.count = 2;
+        g_side.team[0] = 1;
+        g_side.team[1] = 2;
         g_side.pick = shown == 2 ? 1 : 0;
         g_side.made = true;
         g_side.look = true;
@@ -2940,7 +3006,25 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
     if (!g_side.made)
     {
         const uint32_t shown = ReadU32(sd + kTailStart + 4 * kIdxTeamShown);
-        g_side.pick = shown == 2 ? 1 : 0;
+        // v6.5: the sides (Mashup: up to 7, the 1-player side screen only)
+        g_side.count = 2;
+        g_side.team[0] = 1;
+        g_side.team[1] = 2;
+        if (!split)
+        {
+            int teams[kMaxSides] = {};
+            const int n = SideTeamsNow(teams);
+            g_side.count = n;
+            for (int i = 0; i < n; ++i)
+                g_side.team[i] = teams[i];
+        }
+        g_side.pick = 0;
+        for (int i = 0; i < g_side.count; ++i)
+            if (static_cast<uint32_t>(g_side.team[i]) == shown)
+                g_side.pick = i;
+        if (g_side.count > 2 && RingBudget())
+            Log("[wheel] %lu ms: side screen: Mashup - %d sides (teams %d %d %d %d %d %d %d)", ScanMsSinceAttach(), g_side.count,
+                g_side.team[0], g_side.team[1], g_side.team[2], g_side.team[3], g_side.team[4], g_side.team[5], g_side.team[6]);
         // 20g-r12: horizontal - the texts' places in the text group (Classic's), else the split screen's
         float hzNameX[2] = {}, hzNameY = 0.0f, hzTitleX = 0.0f, hzTitleY = 0.0f;
         float yOther = 0.0f;
@@ -2953,19 +3037,20 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
                 ScanMsSinceAttach(), hzModels ? "placed" : "NOT in a HUD root - the split screen's places", hzModelX[0], hzModelX[1],
                 hzModelY, hzSize, hzTexts ? "placed" : "NOT in a HUD root - the split screen's places", hzNameX[0], hzNameX[1], hzNameY,
                 hzTitleX, hzTitleY, kHzTextScale);
-        for (int i = 0; i < 2; ++i)
+        for (int i = 0; i < g_side.count; ++i)
         {
-            const uintptr_t team = ReadU32(sm + kSmTeams + 4 * static_cast<uint32_t>(i + 1));
+            const uintptr_t team = ReadU32(sm + kSmTeams + 4 * static_cast<uint32_t>(g_side.team[i]));
             const uintptr_t arr = team ? ReadU32(team + kTeamClasses) : 0;
             const uintptr_t cls0 = arr ? ReadU32(arr) : 0;
             g_side.model[i] = ClassElementNew(sd, cls0, sb, haveDroid, &g_side.droideka[i]);
             wchar_t* const name = g_side.name[i];
             if (!team || !ReadWide(ReadU32(team + kTeamName), name, 48))
-                swprintf(name, 48, L"SIDE %d", i + 1);
+                swprintf(name, 48, L"SIDE %d", g_side.team[i]);
             // the name under the soldier, in the text group (centre-anchored, reference units, y down)
-            const float lx = hzTexts ? hzNameX[i] : (look.textX + (i == 0 ? -look.labelX : look.labelX)) * RefW();
+            const float lx = hzTexts ? hzNameX[i] : (look.textX + SideLabelOffset(i, g_side.count, look)) * RefW();
             const float ly = hzTexts ? hzNameY : (look.labelY - 0.5f) * RefH();
-            g_side.label[i] = TextNew(sd + kSdTextGroup, "gamefont_large", name, lx, ly, hzTexts ? kHzTextScale : g_sideTextScale, kZText);
+            g_side.label[i] = TextNew(sd + kSdTextGroup, "gamefont_large", name, lx, ly,
+                                      hzTexts ? kHzTextScale : g_sideTextScale * SideTextK(g_side.count), kZText);
             char a8[48] = {};
             WideCharToMultiByte(CP_UTF8, 0, name, -1, a8, sizeof(a8), nullptr, nullptr);
             if (RingBudget())
@@ -3000,27 +3085,41 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
     }
 
     // pick: left = side 1, right = side 2; 18q: the side under the cursor (its soldier, or its name)
+    // v6.5: more than two sides - left / right step through them
     const int was = g_side.pick;
-    if (left)
-        g_side.pick = 0;
-    if (right)
-        g_side.pick = 1;
-    int hover = -1;
-    float boxes[2][8] = {}; // 21j-r20: each side's soldier box and name box (units), for the click lines
-    for (int i = 0; i < 2 && !g_side.look && !hz; ++i) // (20g-r10: not in players 3 / 4's look - no boxes of ours; 20g-r12: nor horizontal)
+    const int nSides = g_side.count;
+    if (nSides <= 2)
     {
-        const float x = 0.5f * W + look.center * W + (i == 0 ? -look.x : look.x) * W;
+        if (left)
+            g_side.pick = 0;
+        if (right)
+            g_side.pick = 1;
+    }
+    else
+    {
+        if (left && g_side.pick > 0)
+            --g_side.pick;
+        if (right && g_side.pick < nSides - 1)
+            ++g_side.pick;
+    }
+    const float sizeK = SideSizeK(nSides, look);
+    const float nameHalfW = nSides <= 3 ? 90.0f : (nSides <= 5 ? 64.0f : 48.0f);
+    int hover = -1;
+    float boxes[kMaxSides][8] = {}; // 21j-r20: each side's soldier box and name box (units), for the click lines
+    for (int i = 0; i < nSides && !g_side.look && !hz; ++i) // (20g-r10: not in players 3 / 4's look - no boxes of ours; 20g-r12: nor horizontal)
+    {
+        const float x = 0.5f * W + look.center * W + SideOffset(i, nSides, look) * W;
         const float y = look.feet * H;
         const ElemBase& b = g_side.droideka[i] ? db : sb;
         float x0, y0, x1, y1;
-        SoldierBox(x, y, b.f80 * look.size * (g_side.droideka[i] ? g_dekaSize : 1.0f), g_side.droideka[i], &x0, &y0, &x1,
+        SoldierBox(x, y, b.f80 * look.size * sizeK * (g_side.droideka[i] ? g_dekaSize : 1.0f), g_side.droideka[i], &x0, &y0, &x1,
                    &y1);
         // the name under the soldier (centre-anchored text group: x from the centre, y from the top)
-        const float nx = g_mouse.w * 0.5f + (look.textX + (i == 0 ? -look.labelX : look.labelX)) * RefW();
+        const float nx = g_mouse.w * 0.5f + (look.textX + SideLabelOffset(i, nSides, look)) * RefW();
         const float ny = look.labelY * RefH();
-        if (MouseIn(x0, y0, x1, y1) || MouseIn(nx - 90.0f, ny - 22.0f, nx + 90.0f, ny + 22.0f))
+        if (MouseIn(x0, y0, x1, y1) || MouseIn(nx - nameHalfW, ny - 22.0f, nx + nameHalfW, ny + 22.0f))
             hover = i;
-        const float b8[8] = { x0, y0, x1, y1, nx - 90.0f, ny - 22.0f, nx + 90.0f, ny + 22.0f };
+        const float b8[8] = { x0, y0, x1, y1, nx - nameHalfW, ny - 22.0f, nx + nameHalfW, ny + 22.0f };
         memcpy(boxes[i], b8, sizeof(b8));
     }
     if (hover >= 0)
@@ -3047,8 +3146,8 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
         a = true;
 
     // 18o: text tuning keys ([ ] names apart, - = names up / down, PageUp / PageDown title, ; ' size)
-    // 19g: 1 player only (split screen has the Xbox's layout)
-    if (!split)
+    // 19g: 1 player only (split screen has the Xbox's layout); v6.5: two sides only
+    if (!split && nSides <= 2)
     {
         const bool k1 = (GetAsyncKeyState(VK_OEM_4) & 0x8000) != 0, k2 = (GetAsyncKeyState(VK_OEM_6) & 0x8000) != 0;
         const bool k3 = (GetAsyncKeyState(VK_OEM_MINUS) & 0x8000) != 0, k4 = (GetAsyncKeyState(VK_OEM_PLUS) & 0x8000) != 0;
@@ -3096,15 +3195,15 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
         }
     }
 
-    // place the two soldiers, light the picked one, the other dark (its light turned round)
-    for (int i = 0; i < 2; ++i)
+    // place the soldiers, light the picked one, the others dark (their light turned round)
+    for (int i = 0; i < nSides; ++i)
     {
         const uintptr_t e = g_side.model[i];
         if (!e)
             continue;
         const ElemBase& b = g_side.droideka[i] ? db : sb;
         const float k = sb.s / b.s;
-        const float x = hzModels ? hzModelX[i] : 0.5f * W + look.center * W + (i == 0 ? -look.x : look.x) * W; // 20g-r12
+        const float x = (hzModels && i < 2) ? hzModelX[i] : 0.5f * W + look.center * W + SideOffset(i, nSides, look) * W; // 20g-r12
         const float y = hzModels ? hzModelY : look.feet * H;
         float* const m = reinterpret_cast<float*>(e + kElemMatrix);
         for (int j = 0; j < 12; ++j)
@@ -3117,7 +3216,7 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
         const uintptr_t set80 = VirtualAt(e, 0x38);
         if (set80)
             reinterpret_cast<ElemSetFloat_t>(set80)(reinterpret_cast<void*>(e), nullptr,
-                                                     b.f80 * (hzModels ? hzSize : look.size) * (g_side.droideka[i] ? g_dekaSize : 1.0f));
+                                                     b.f80 * (hzModels ? hzSize : look.size * sizeK) * (g_side.droideka[i] ? g_dekaSize : 1.0f));
         // 18m: +14Ch is where the soldier aims, not a light - both keep the game's straight-ahead aim
         // 18n: the unpicked side dark (the group hands each child's colour to the model's draw)
         uint8_t* const c = reinterpret_cast<uint8_t*>(e + kElemColor);
@@ -3140,7 +3239,7 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
 
     if (!a)
         return 0;
-    const int team = g_side.pick + 1;
+    const int team = (g_side.pick >= 0 && g_side.pick < nSides) ? g_side.team[g_side.pick] : g_side.pick + 1; // v6.5
     if (RingBudget())
         Log("[wheel] %lu ms: side screen: A - SelectTeam(%d) (the spawn screen's own team select)", ScanMsSinceAttach(),
             team);
