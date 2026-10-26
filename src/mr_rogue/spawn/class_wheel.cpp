@@ -2762,8 +2762,8 @@ float SideStep(int n, const SideLook& look)
 // v6.5: the place of side i of n: its soldier (of the screen width, from the soldiers' centre) and its name (of the
 // reference width, from the screen centre); n = 2 gives the stock places
 // v6.7: more than 4 sides - two rows: 4 on the top row, the rest below (each row centred, smaller soldiers)
-constexpr float kRowTopFeet = 0.49f, kRowTopLabel = 0.525f;  // of the screen height
-constexpr float kRowLowFeet = 0.85f, kRowLowLabel = 0.885f;
+constexpr float kRowTopFeet = 0.49f, kRowTopLabel = 0.475f;  // of the screen height (v6.8: the names right under the feet)
+constexpr float kRowLowFeet = 0.85f, kRowLowLabel = 0.835f;
 constexpr float kTwoRowSize = 0.58f;                         // the soldiers' size against the 4-side row
 bool SideTwoRows(int n)
 {
@@ -4688,7 +4688,8 @@ void ClassWheelFrame(uintptr_t sd, const char* screen)
     }
     // nothing is touched until the spawn screen is set up (a new match's first frames)
     const uint32_t teamShown = ReadU32(sd + kTailStart + 4 * kIdxTeamShown);
-    if ((teamShown != 1 && teamShown != 2) || !ReadU32(sd + kTailStart + 4 * kIdxCharacter))
+    // v6.8: teams 1 - 7 (Mashup Conquest's sides 3 - 7 too - the flow stopped dead on the spawn point screen for them)
+    if (teamShown < 1 || teamShown > 7 || !ReadU32(sd + kTailStart + 4 * kIdxCharacter))
         return;
     const LONG flow = g_previewIdx;
     // 20g-r12: horizontal - his half's HUD root gets Classic's safe area before anything of his is placed this frame (the

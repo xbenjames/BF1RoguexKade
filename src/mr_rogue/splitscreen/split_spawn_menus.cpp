@@ -1375,7 +1375,7 @@ DWORD WINAPI WatchThread(LPVOID)
         }
         const uintptr_t sd = g_sdGlobal ? ReadU32(g_sdGlobal) : 0;
         const uint32_t team = sd ? ReadU32(sd + kSdTeamShown) : 0;
-        if (sm != scannedFor && sd && (team == 1 || team == 2) && ReadU32(sd + kSdCharacter))
+        if (sm != scannedFor && sd && team >= 1 && team <= 7 && ReadU32(sd + kSdCharacter)) // v6.8: teams 3 - 7 too
         {
             scannedFor = sm;
             MatchScan();
