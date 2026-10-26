@@ -2799,13 +2799,21 @@ bool SideTwoRows(int n)
 {
     return n > 4;
 }
+// v7.0: one layout per side count - 2: the stock pair; 3 / 4: one row; 5: 3 + 2; 6: 3 + 3; 7: 4 + 3 (the top row's count)
+int SideTopCount(int n)
+{
+    if (!SideTwoRows(n))
+        return n;
+    return n >= 7 ? 4 : 3;
+}
 void SideCell(int i, int n, int* col, int* cols, int* row)
 {
     if (SideTwoRows(n))
     {
-        *row = i < 4 ? 0 : 1;
-        *col = i < 4 ? i : i - 4;
-        *cols = i < 4 ? 4 : n - 4;
+        const int top = SideTopCount(n);
+        *row = i < top ? 0 : 1;
+        *col = i < top ? i : i - top;
+        *cols = i < top ? top : n - top;
         return;
     }
     *row = 0;
@@ -2816,13 +2824,13 @@ float SideFeetY(int i, int n, const SideLook& look)
 {
     if (!SideTwoRows(n))
         return look.feet;
-    return i < 4 ? kRowTopFeet : kRowLowFeet;
+    return i < SideTopCount(n) ? kRowTopFeet : kRowLowFeet;
 }
 float SideLabelY(int i, int n, const SideLook& look)
 {
     if (!SideTwoRows(n))
         return look.labelY;
-    return i < 4 ? kRowTopLabel : kRowLowLabel;
+    return i < SideTopCount(n) ? kRowTopLabel : kRowLowLabel;
 }
 float SideOffset(int i, int n, const SideLook& look)
 {
@@ -2830,7 +2838,7 @@ float SideOffset(int i, int n, const SideLook& look)
         return i == 0 ? -look.x : look.x;
     int col = 0, cols = n, row = 0;
     SideCell(i, n, &col, &cols, &row);
-    const float step = SideStep(SideTwoRows(n) ? 4 : n, look);
+    const float step = SideStep(SideTopCount(n), look); // v7.0: the top row's spacing for both rows
     return (static_cast<float>(col) - 0.5f * static_cast<float>(cols - 1)) * step;
 }
 float SideLabelOffset(int i, int n, const SideLook& look)
@@ -2844,13 +2852,15 @@ float SideSizeK(int n, const SideLook& look)
     if (n <= 2)
         return 1.0f;
     if (SideTwoRows(n))
-        return SideSizeK(4, look) * kTwoRowSize;
+        return SideSizeK(SideTopCount(n), look) * kTwoRowSize; // v7.0: 3 per row (5 / 6 sides) a little bigger than 4
     const float step = SideStep(n, look);
     return (step / (2.0f * look.x) > 0.45f ? step / (2.0f * look.x) : 0.45f);
 }
 float SideTextK(int n)
 {
-    return n <= 3 ? 1.0f : (n <= 5 ? 0.8f : 0.65f);
+    // v7.0: by the widest row (5 / 6 sides have rows of 3)
+    const int top = SideTopCount(n);
+    return top <= 3 && n <= 3 ? 1.0f : (top <= 3 ? 0.8f : (n <= 4 ? 0.8f : 0.65f));
 }
 bool TextOk()
 {
@@ -3205,7 +3215,7 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
             g_side.pick = j;
     }
     const float sizeK = SideSizeK(nSides, look);
-    const float nameHalfW = nSides <= 3 ? 90.0f : (nSides <= 5 ? 64.0f : 48.0f);
+    const float nameHalfW = nSides <= 3 ? 90.0f : (SideTopCount(nSides) <= 3 || nSides == 4 ? 64.0f : 48.0f); // v7.0
     int hover = -1;
     float boxes[kMaxSides][8] = {}; // 21j-r20: each side's soldier box and name box (units), for the click lines
     for (int i = 0; i < nSides && !g_side.look && !hz; ++i) // (20g-r10: not in players 3 / 4's look - no boxes of ours; 20g-r12: nor horizontal)
