@@ -9,8 +9,11 @@ namespace bf1 {
 
 bool LogOpen(const char* path);
 
-// Thread-safe. Adds CRLF.
+// Thread-safe. Adds CRLF. 25e (v6.9): the line goes into a buffer; a writer thread writes it (within 100 ms).
 void Log(const char* fmt, ...);
+
+// 25e (v6.9): writes what waits now (the crash handler).
+void LogFlush();
 
 // For DLL_PROCESS_DETACH only (other threads may be dead and holding the lock).
 void LogNoLock(const char* fmt, ...);

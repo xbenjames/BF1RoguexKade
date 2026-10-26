@@ -1,4 +1,5 @@
-// BF1GameExt - crashlog.cpp   (file build p23a-r1)
+// BF1GameExt - crashlog.cpp   (file build p25e-r1)
+// 25e (v6.9): LogFlush at the end of each report (log.cpp buffers now).
 // 23a (v6.3): moved to src/mr_rogue/core/; file names in the comments and log lines follow the new names. Nothing else changed.
 // Vectored exception handler that only logs. Exceptions are reported when they
 // are first raised, so a logged one may still be handled by the game; the last
@@ -197,6 +198,7 @@ LONG CALLBACK CrashVeh(PEXCEPTION_POINTERS ep)
     if (n == kMaxLogged)
         Log("[exception] limit of %ld reached, no more exceptions will be logged",
             static_cast<long>(kMaxLogged));
+    LogFlush(); // 25e (v6.9): the log is buffered now - the report goes to disk before the game may go
     return EXCEPTION_CONTINUE_SEARCH;
 }
 

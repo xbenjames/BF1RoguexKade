@@ -641,6 +641,7 @@ static_assert(kMouseY == kMouseX + 4, "21j-r20: the cursor's x and y are read to
 constexpr int kZFront = 0x90;         // the ring's front soldier's layer (drawn last of the soldiers)
 constexpr int kZText = 0x10;          // our texts: drawn after everything else in their group
 constexpr uint8_t kDarkGrey = 0x58;   // the unpicked side's colour
+constexpr uint8_t kOutGrey = 0x2C;    // v6.9: a side out of the match (Mashup Conquest)
 // 18m
 constexpr uint32_t kSdTextGroup = 0x300; // the group the spawn screen keeps its own texts in
 const char* const kMapSetModeBody =
@@ -2683,6 +2684,7 @@ struct Side
     bool look = false;        // 20g-r10: 4-player - drawn by split_spawn_menus.cpp in players 3 / 4's look (none of ours made)
     bool hz = false;          // 20g-r12: made in the horizontal layout (made again if that changes)
     DWORD lookAt = 0;         //            its last frame (ClassWheelP1Look)
+    int nOutLogged = 0;       // v6.9: the out sides last logged
 };
 Side g_side;
 
@@ -2711,6 +2713,34 @@ int SideTeamsNow(int* teams)
     teams[0] = 1;
     teams[1] = 2;
     return 2;
+}
+// v6.9: a side that is out of this match (BF1Modes.dll's BF1Modes_SideOut: Mashup Conquest, its reinforcements gone) -
+// greyed out on the side screen and not pickable. No BF1Modes (or an older one): no side is out.
+typedef int(__cdecl* SideOut_t)(int team);
+bool SideOutNow(int team)
+{
+    static SideOut_t fn = nullptr;
+    static bool looked = false;
+    if (!looked)
+    {
+        const HMODULE m = GetModuleHandleA("dinput8_BF1Modes.dll");
+        if (m)
+        {
+            looked = true;
+            fn = reinterpret_cast<SideOut_t>(GetProcAddress(m, "BF1Modes_SideOut"));
+            Log("[wheel] side screen: dinput8_BF1Modes.dll %s", fn ? "has BF1Modes_SideOut - defeated sides greyed out" :
+                                                                   "has no BF1Modes_SideOut - no side is greyed out");
+        }
+    }
+    return fn && fn(team) != 0;
+}
+// v6.9: the next side not out from 'from' going 'dir' (+1 / -1), else -1
+int SideNextIn(const bool* out, int n, int from, int dir)
+{
+    for (int i = from + dir; i >= 0 && i < n; i += dir)
+        if (!out[i])
+            return i;
+    return -1;
 }
 bool g_sideLookAllowed = false; // 20g-r10: split_spawn_menus.cpp can draw player 1's side screen in players 3 / 4's look
 int g_sideLookLines = 0;
@@ -3059,6 +3089,14 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
         for (int i = 0; i < g_side.count; ++i)
             if (static_cast<uint32_t>(g_side.team[i]) == shown)
                 g_side.pick = i;
+        // v6.9: not a side that is out (his own side defeated: the first one still in)
+        if (SideOutNow(g_side.team[g_side.pick]))
+            for (int i = 0; i < g_side.count; ++i)
+                if (!SideOutNow(g_side.team[i]))
+                {
+                    g_side.pick = i;
+                    break;
+                }
         if (g_side.count > 2 && RingBudget())
             Log("[wheel] %lu ms: side screen: Mashup - %d sides (teams %d %d %d %d %d %d %d)", ScanMsSinceAttach(), g_side.count,
                 g_side.team[0], g_side.team[1], g_side.team[2], g_side.team[3], g_side.team[4], g_side.team[5], g_side.team[6]);
@@ -3125,19 +3163,46 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
     // v6.5: more than two sides - left / right step through them
     const int was = g_side.pick;
     const int nSides = g_side.count;
+    // v6.9: the sides out of the match (greyed out, skipped, not joined)
+    bool out[kMaxSides] = {};
+    int nOut = 0;
+    for (int i = 0; i < nSides; ++i)
+        if ((out[i] = SideOutNow(g_side.team[i])))
+            ++nOut;
+    if (nOut != g_side.nOutLogged && RingBudget())
+    {
+        g_side.nOutLogged = nOut;
+        Log("[wheel] %lu ms: side screen: %d side(s) out of the match - greyed out, not pickable", ScanMsSinceAttach(), nOut);
+    }
     if (nSides <= 2)
     {
-        if (left)
+        if (left && !out[0])
             g_side.pick = 0;
-        if (right)
+        if (right && !out[1])
             g_side.pick = 1;
     }
     else
     {
-        if (left && g_side.pick > 0)
-            --g_side.pick;
-        if (right && g_side.pick < nSides - 1)
-            ++g_side.pick;
+        if (left)
+        {
+            const int j = SideNextIn(out, nSides, g_side.pick, -1);
+            if (j >= 0)
+                g_side.pick = j;
+        }
+        if (right)
+        {
+            const int j = SideNextIn(out, nSides, g_side.pick, +1);
+            if (j >= 0)
+                g_side.pick = j;
+        }
+    }
+    if (g_side.pick >= 0 && g_side.pick < nSides && out[g_side.pick]) // (it went out while the screen was up)
+    {
+        int j = SideNextIn(out, nSides, g_side.pick, +1);
+        if (j < 0)
+            j = SideNextIn(out, nSides, g_side.pick, -1);
+        if (j >= 0)
+            g_side.pick = j;
     }
     const float sizeK = SideSizeK(nSides, look);
     const float nameHalfW = nSides <= 3 ? 90.0f : (nSides <= 5 ? 64.0f : 48.0f);
@@ -3159,7 +3224,8 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
         const float b8[8] = { x0, y0, x1, y1, nx - nameHalfW, ny - 22.0f, nx + nameHalfW, ny + 22.0f };
         memcpy(boxes[i], b8, sizeof(b8));
     }
-    if (hover >= 0)
+    const bool hoverOut = hover >= 0 && out[hover]; // v6.9: under the cursor but out - not picked, a click does nothing
+    if (hover >= 0 && !hoverOut)
         g_side.pick = hover;
     if (g_side.pick != was && RingBudget())
         Log("[wheel] %lu ms: side screen: side %d picked%s", ScanMsSinceAttach(), g_side.pick + 1,
@@ -3169,7 +3235,12 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
     // a left click joins the picked side (the one under the cursor, or the last picked). 21j-r19 ([ClassWheel] MouseClicks=1, the
     // Classic Collection's): only a click on a side (its soldier or its name) joins it - anywhere else nothing (players 3 / 4's
     // look has no boxes of ours: a click joins the picked side there, as before)
-    if (mouseA && g_mouseClicks && !g_side.look && !hz && hover < 0)
+    if (mouseA && hoverOut)
+    {
+        if (ClickLines())
+            Log("[wheel] %lu ms: mouse: click on side %d - it is out of the match, nothing done", ScanMsSinceAttach(), hover + 1);
+    }
+    else if (mouseA && g_mouseClicks && !g_side.look && !hz && hover < 0)
     {
         if (ClickLines())
             Log("[wheel] %lu ms: mouse: click on the side screen at %.0f, %.0f units (%s), on neither side - nothing done (side 1: "
@@ -3257,13 +3328,18 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
         // 18m: +14Ch is where the soldier aims, not a light - both keep the game's straight-ahead aim
         // 18n: the unpicked side dark (the group hands each child's colour to the model's draw)
         uint8_t* const c = reinterpret_cast<uint8_t*>(e + kElemColor);
-        const uint8_t v = i == g_side.pick ? 0xFF : kDarkGrey;
+        const uint8_t v = out[i] ? kOutGrey : (i == g_side.pick ? 0xFF : kDarkGrey); // v6.9: out - darker still
         c[0] = c[1] = c[2] = v;
         c[3] = 0xFF;
         g_rf.setLayer(reinterpret_cast<void*>(e), nullptr, kZFront);
         g_rf.setVisible(reinterpret_cast<void*>(e), nullptr, 1);
         // 18l-r3: no animation on the side screen (no per-frame animation calls)
-        TextGrey(g_side.label[i], i != g_side.pick);
+        TextGrey(g_side.label[i], i != g_side.pick || out[i]);
+        if (out[i] && g_side.label[i]) // v6.9: an out side's name darker than an unpicked one's
+        {
+            uint8_t* const t = reinterpret_cast<uint8_t*>(g_side.label[i] + kElemColor);
+            t[0] = t[1] = t[2] = kOutGrey;
+        }
     }
 
     // the game's own soldier stays hidden while the side screen is up
@@ -3276,6 +3352,12 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
 
     if (!a)
         return 0;
+    if (g_side.pick >= 0 && g_side.pick < nSides && out[g_side.pick]) // v6.9: every side out - nothing to join
+    {
+        if (RingBudget())
+            Log("[wheel] %lu ms: side screen: A on side %d - out of the match, not joined", ScanMsSinceAttach(), g_side.pick + 1);
+        return 0;
+    }
     const int team = (g_side.pick >= 0 && g_side.pick < nSides) ? g_side.team[g_side.pick] : g_side.pick + 1; // v6.5
     if (RingBudget())
         Log("[wheel] %lu ms: side screen: A - SelectTeam(%d) (the spawn screen's own team select)", ScanMsSinceAttach(),
