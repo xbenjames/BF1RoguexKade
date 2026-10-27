@@ -2254,6 +2254,7 @@ struct Flow
     int textsFor = kScrNone;   // the screen our texts were made for
     uintptr_t sideName[2] = {};
     uintptr_t sideModel[2] = {}; // 18x: the side screen's two soldiers
+    bool sideRing = false;       // v7.1: his side carousel is up (class_wheel.cpp's side ring 2) - more than two sides
     bool ringShown = false;      // 19g: his class ring is up (class_wheel.cpp's ring 2)
     uintptr_t sideRec = 0;       // 19g: the record / group the side soldiers were made in (deleted only while
     uintptr_t sideGroup = 0;     //      both are still the screen's, as the texts)
@@ -2471,6 +2472,32 @@ void TeamNameW(uintptr_t sm, int team, wchar_t* out, size_t cap)
     const uintptr_t to = TeamObject(sm, team);
     if (!to || !ReadWideAt(ReadU32(to + kTeamName), out, cap))
         swprintf(out, cap, L"SIDE %d", team);
+}
+
+// v7.1: player 2's sides - Mashup Conquest: every playable team (up to 7, his side screen a carousel); 4-player and every
+// other match: teams 1 and 2
+constexpr int kP2MaxSides = 7;
+int P2Sides(int* teams)
+{
+    if (!P2Quarter())
+    {
+        const int n = ClassWheelSideTeams(teams, kP2MaxSides);
+        if (n >= 2)
+            return n;
+    }
+    teams[0] = 1;
+    teams[1] = 2;
+    return 2;
+}
+// v7.1: the index of `team` among his sides (0 if it is not one of them)
+int P2SideIndex(int team)
+{
+    int teams[kP2MaxSides] = {};
+    const int n = P2Sides(teams);
+    for (int i = 0; i < n; ++i)
+        if (teams[i] == team)
+            return i;
+    return 0;
 }
 
 // the posts his side can spawn at, in the game's order: NextSpawnPoint round once from cursor 0,
@@ -2872,6 +2899,9 @@ void FlowModelsDrop()
             ClassWheelDeleteElement(g_flow.sideModel[i]);
         g_flow.sideModel[i] = 0;
     }
+    if (g_flow.sideRing) // v7.1
+        ClassWheelSideRingClear(2, sideAlive, sideAlive ? "his side screen is going" : "his side screen is gone - left to the game");
+    g_flow.sideRing = false;
     g_flow.sideRec = 0;
     g_flow.sideGroup = 0;
     g_flow.sidePanel = nullptr;
@@ -2937,6 +2967,9 @@ void FlowTextsDrop(bool del, const char* why)
     else
     {
         g_flow.sideModel[0] = g_flow.sideModel[1] = 0;
+        if (g_flow.sideRing) // v7.1: left to the game (nothing touched)
+            ClassWheelSideRingClear(2, false, why);
+        g_flow.sideRing = false;
         if (g_flow.ringShown) // 19g: left to the game (nothing touched)
             ClassWheelRing2Clear(false, why);
         g_flow.ringShown = false;
@@ -3097,6 +3130,31 @@ void FlowTextsMakeOnce(int scr, uintptr_t sm)
             g_flow.prompt = FlowTextAtS(scr, L"SELECT SIDE", 0.5f, kQPromptY, kQPromptScale, "prompt (4-player)");
             MapElementHide(true);
             return;
+        }
+        {
+            // v7.1: more than two sides (Mashup Conquest) - a carousel (SideFrame turns it): the title and the picked side's
+            // name only, the soldiers on class_wheel.cpp's side ring 2
+            int teams[kP2MaxSides] = {};
+            const int nS = P2Sides(teams);
+            if (nS > 2)
+            {
+                const bool hzC = P2Hz();
+                if (hzC)
+                    FlowTextAtS(scr, L"CHOOSE YOUR SIDE", kHzTitleX, kHzTitleY, kHzTextScale, "side title (carousel, horizontal)");
+                else
+                    FlowTextAt(scr, L"CHOOSE YOUR SIDE", kSideTitleX, kSideTitleY, "side title (carousel)");
+                if (g_flow.pick < 0 || g_flow.pick >= nS)
+                    g_flow.pick = 0;
+                wchar_t name[48];
+                TeamNameW(sm, teams[g_flow.pick], name, 48);
+                g_flow.sideName[0] = hzC ? FlowTextAtS(scr, name, 0.5f * (kHzNameX0 + kHzNameX1), kHzNameY, kHzTextScale,
+                                                       "side name (carousel, horizontal)")
+                                         : FlowTextAt(scr, name, 0.5f * (kSideNameX0 + kSideNameX1), kSideNameY, "side name (carousel)");
+                g_flow.sideName[1] = 0;
+                g_flow.shownPick = -1;
+                MapElementHide(true);
+                return;
+            }
         }
         if (P2Hz()) // 20g-r12: horizontal - the Classic Collection's side screen, as player 1's (class_wheel.cpp's kHz*)
         {
@@ -3604,7 +3662,7 @@ bool MapUpdateFlagged(uintptr_t map, float dt, bool fromGame)
     // 1's: its post (+23E0h) and team (+23DCh) are his for the call (the icons' team and the highlight both
     // read them: GOG 1.3 0x001893EA, 0x0018966E), put back right after
     const uintptr_t sd = g_sdGlobal ? ReadU32(g_sdGlobal) : 0;
-    const bool swap = sd != 0 && g_flow.post != 0 && g_flow.team >= 1 && g_flow.team <= 2;
+    const bool swap = sd != 0 && g_flow.post != 0 && g_flow.team >= 1 && g_flow.team <= 7; // v7.1: teams 1 - 7
     uint32_t sdPostWas = 0;
     uint32_t sdTeamWas = 0;
     if (swap)
@@ -3957,6 +4015,8 @@ void FlowNewMatch(uintptr_t sm, long sdDeletes)
             kFlowScreens[g_flow.screen]);
     if (g_flow.ringShown) // 19g: his ring's soldiers forgotten (nothing touched)
         ClassWheelRing2Clear(false, "a new match");
+    if (g_flow.sideRing) // v7.1: his side carousel forgotten (nothing touched)
+        ClassWheelSideRingClear(2, false, "a new match");
     if (g_flow.mapSet && g_flow.map)
         MapWrapRemove(g_flow.map, "a new match"); // 19h-r2: (only while it is still his map)
     g_flow = Flow();
@@ -3966,8 +4026,132 @@ void FlowNewMatch(uintptr_t sm, long sdDeletes)
 }
 
 // ---- each screen, every frame it is manager 1's top -----------------------------------------------
+// v7.1: his side screen with more than two sides (Mashup Conquest): a carousel - left / right turn it round (the sides out
+// of the match skipped), the picked side in front with its name, A joins it
+void SideCarouselFrame(uintptr_t sm, const int* teams, int n, bool left, bool right, bool a)
+{
+    bool out[kP2MaxSides] = {};
+    for (int i = 0; i < n; ++i)
+        out[i] = ClassWheelSideOut(teams[i]);
+    if (g_flow.pick < 0 || g_flow.pick >= n)
+        g_flow.pick = 0;
+    const int was = g_flow.pick;
+    for (int dir = -1; dir <= 1; dir += 2)
+    {
+        if ((dir < 0 && !left) || (dir > 0 && !right))
+            continue;
+        for (int k = 1; k < n; ++k)
+        {
+            const int j = ((g_flow.pick + dir * k) % n + n) % n;
+            if (!out[j])
+            {
+                g_flow.pick = j;
+                break;
+            }
+        }
+    }
+    if (out[g_flow.pick]) // (it went out while the screen was up)
+        for (int k = 1; k < n; ++k)
+        {
+            const int j = (g_flow.pick + k) % n;
+            if (!out[j])
+            {
+                g_flow.pick = j;
+                break;
+            }
+        }
+    if (g_flow.pick != was)
+        ClassWheelPlaySound(0);
+    if (g_flow.pick != g_flow.shownPick)
+    {
+        g_flow.shownPick = g_flow.pick;
+        wchar_t name[48];
+        TeamNameW(sm, teams[g_flow.pick], name, 48);
+        if (g_flow.sideName[0])
+        {
+            ClassWheelSetText(g_flow.sideName[0], name);
+            ClassWheelTextGrey(g_flow.sideName[0], out[g_flow.pick]);
+        }
+    }
+    if (g_soldiersWanted)
+    {
+        const bool hz = P2Hz();
+        const char* panel = nullptr;
+        const uintptr_t group = ScreenGroup(kScrSide, &panel);
+        const float fx0 = hz ? kHzSideX0 : kSideModelX0;
+        const float fx1 = hz ? kHzSideX1 : kSideModelX1;
+        const float fy = hz ? kHzSideFeetY : kSideModelY;
+        float x0 = 0.0f, y0 = 0.0f, x1 = 0.0f, y1 = 0.0f, xt = 0.0f, yt = 0.0f;
+        if (group && (ReadU32(group + kElemFlags) & 0x100) && RootPlace(group, fx0, fy, &x0, &y0) &&
+            RootPlace(group, fx1, fy, &x1, &y1) && RootPlace(group, 0.5f * (fx0 + fx1), fy - 0.07f, &xt, &yt) &&
+            (!g_flow.sideRing || group == g_flow.sideGroup))
+        {
+            float size = kSideModelSize;
+            if (hz)
+            {
+                float w = 0.0f, h = 0.0f, ox = 0.0f, oy = 0.0f, kx = 0.0f, ky = 0.0f;
+                if (P2SpawnRootGeom(1, &w, &h, &ox, &oy, &kx, &ky))
+                    size = kHzSideTall * h / kHzSoldierUnits;
+            }
+            uintptr_t classes[kP2MaxSides] = {};
+            for (int i = 0; i < n; ++i)
+                classes[i] = TeamClass(sm, teams[i], 0);
+            const float cx = 0.5f * (x0 + x1);
+            const float cy = 0.5f * (y0 + y1);
+            const float width = (hz ? 0.6f : 0.75f) * (x1 - x0);
+            const int placed =
+                ClassWheelSideRingFrame(2, group, classes, out, n, g_flow.pick, cx, cy, width, size, cy - yt, kRingStyleClassic);
+            if (!g_flow.sideRing)
+            {
+                g_flow.sideRing = true;
+                g_flow.sideRec = ScreenRecord(kFlowScreens[kScrSide]);
+                g_flow.sideGroup = group;
+                g_flow.sidePanel = panel;
+                if (FlowBudget())
+                    Log("[p2spawn] %lu ms: flow: side carousel (%d sides%s) in %s (0x%08X): %d placed, centre %.0f %.0f, radius %.0f, "
+                        "size %.3f", ScanMsSinceAttach(), n, hz ? ", horizontal" : "", panel ? panel : "the screen's first group",
+                        static_cast<unsigned>(group), placed, cx, cy, width, size);
+            }
+        }
+    }
+    if (!a)
+        return;
+    if (out[g_flow.pick])
+    {
+        if (FlowBudget())
+            Log("[p2spawn] %lu ms: flow: A on the side screen - side %d is out of the match, not joined", ScanMsSinceAttach(),
+                teams[g_flow.pick]);
+        return;
+    }
+    const int team = teams[g_flow.pick];
+    wchar_t name[48];
+    char a8[96];
+    TeamNameW(sm, team, name, 48);
+    if (team != g_flow.team)
+    {
+        g_flow.post = 0; // another side: its own posts and classes
+        g_flow.cls = 0;
+    }
+    g_flow.team = team;
+    g_flow.sideDone = true;
+    ClassWheelPlaySound(1);
+    if (FlowBudget())
+        Log("[p2spawn] %lu ms: flow: A on the side screen (carousel) - side %d \"%s\"", ScanMsSinceAttach(), team,
+            Narrow(name, a8, sizeof(a8)));
+    FlowShow(kScrPost, "side chosen");
+}
+
 void SideFrame(uintptr_t sm, bool left, bool right, bool a)
 {
+    {
+        int teams[kP2MaxSides] = {};
+        const int n = P2Sides(teams);
+        if (n > 2) // v7.1
+        {
+            SideCarouselFrame(sm, teams, n, left, right, a);
+            return;
+        }
+    }
     if (left && g_flow.pick != 0)
     {
         g_flow.pick = 0;
@@ -4404,7 +4588,7 @@ void FlowFrame()
     {
         const uintptr_t sd = g_sdGlobal ? ReadU32(g_sdGlobal) : 0;
         const uint32_t teamShown = sd ? ReadU32(sd + kSdTeamShown) : 0;
-        if (sd && (teamShown == 1 || teamShown == 2) && ReadU32(sd + kSdCharacter))
+        if (sd && teamShown >= 1 && teamShown <= 7 && ReadU32(sd + kSdCharacter)) // v7.1: teams 1 - 7 (Mashup)
         {
             g_flow.matchReady = true;
             if (g_getSm() != sm && !g_flow.smDiffLogged && FlowBudget())
@@ -4553,8 +4737,16 @@ void FlowFrame()
         const int32_t t = static_cast<int32_t>(ReadU32(ch + kCharTeam));
         if (!g_flow.sideDone)
         {
-            g_flow.pick = t == 2 ? 1 : 0;
-            g_flow.team = t == 2 ? 2 : 1;
+            // v7.1: his side among this match's sides (Mashup: up to 7), the first one if he has none of them yet
+            {
+                int st[kP2MaxSides] = {};
+                const int ns = P2Sides(st);
+                g_flow.pick = 0;
+                for (int i = 0; i < ns; ++i)
+                    if (st[i] == t)
+                        g_flow.pick = i;
+                g_flow.team = st[g_flow.pick];
+            }
             // 21f: sides locked (campaign / Galactic Conquest): no side screen - the side the game gave him
             const int locked = SidesLockedNow();
             if (locked == 1)
@@ -4575,9 +4767,10 @@ void FlowFrame()
                     ScanMsSinceAttach(), locked == 0 ? "can be switched" : "NOT known", static_cast<long>(t),
                     PlayerSideNow(0), PlayerSideNow(1));
         }
-        else if ((t == 1 || t == 2) && t != g_flow.team)
+        else if (t >= 1 && t <= 7 && t != g_flow.team) // v7.1: teams 1 - 7 (Mashup)
         {
             // the game kept him on the other side: his spawn point screen shows that side's posts
+            g_flow.pick = P2SideIndex(t);
             if (FlowBudget())
                 Log("[p2spawn] %lu ms: flow: player 2 is on side %ld, not %d - his screens follow the game", ScanMsSinceAttach(),
                     static_cast<long>(t), g_flow.team);
@@ -8934,7 +9127,7 @@ void F34FrameOne(Flow34& f, uintptr_t sm, long deletes)
     {
         const uintptr_t sd = g_sdGlobal ? ReadU32(g_sdGlobal) : 0;
         const uint32_t teamShown = sd ? ReadU32(sd + kSdTeamShown) : 0;
-        if (sd && (teamShown == 1 || teamShown == 2) && ReadU32(sd + kSdCharacter))
+        if (sd && teamShown >= 1 && teamShown <= 7 && ReadU32(sd + kSdCharacter)) // v7.1: teams 1 - 7 (Mashup)
         {
             f.matchReady = true;
             if (F34Budget(f))

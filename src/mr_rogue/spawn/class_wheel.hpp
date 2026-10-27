@@ -1,4 +1,5 @@
 // BF1GameExt - class_wheel.hpp   (file build p23a-r1)
+// v7.1: ClassWheelSideTeams / ClassWheelSideOut / ClassWheelSideRingFrame / ClassWheelSideRingClear (the side carousel).
 // 23a (v6.3): moved to src/mr_rogue/spawn/ (was classwheel_scan.hpp); file names in the comments and log lines follow the new names. Nothing else changed.
 // 21j-r18: ClassWheelMenuState / ClassWheelMenuSet (the main menu's GAME OPTIONS SPAWN SCREEN row); ClassWheelSplitWanted is
 // [ClassWheel] Split alone ([ClassWheel] Enabled is single player only).
@@ -196,6 +197,16 @@ bool ClassWheelVehiclesAt(uintptr_t post, wchar_t* out, size_t cap);
 int ClassWheelRingFrame(int ring, uintptr_t group, const uintptr_t* classes, int n, int sel, float cx, float cy, float width,
                         float size, float lift, float fixX, float fixY, int style);
 void ClassWheelRingClear(int ring, bool del, const char* why);
+// v7.1: the sides of this match for the side screens (Mashup Conquest: every playable team 1 - 7; else teams 1 and 2) -
+// how many put in `teams` (at most `max`) - and whether a side is out of the match (greyed out, not pickable).
+int ClassWheelSideTeams(int* teams, int max);
+bool ClassWheelSideOut(int team);
+// v7.1: player p's (1 - 4) side carousel (CHOOSE YOUR SIDE with more than two sides): one soldier per side (`classes` = each
+// side's first class) on a ring in `group`, turned to `sel`, the others darker (`out` sides darker still); the arguments
+// as ClassWheelRing2Frame's. Every frame his side screen is up (game thread). Returns the soldiers placed.
+int ClassWheelSideRingFrame(int player, uintptr_t group, const uintptr_t* classes, const bool* out, int n, int sel, float cx,
+                            float cy, float width, float size, float lift, int style);
+void ClassWheelSideRingClear(int player, bool del, const char* why);
 // 20f-r2 / r4: a new, empty RedScreenGroupElement (the game's new and its own constructor; not in any group or root
 // yet - its root anchor / flag are the fields AddToRoot sets), or 0 if
 // its constructor was not found at start. Delete it with ClassWheelDeleteElement (its children are only taken out of

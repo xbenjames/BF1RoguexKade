@@ -2685,6 +2685,9 @@ struct Side
     bool hz = false;          // 20g-r12: made in the horizontal layout (made again if that changes)
     DWORD lookAt = 0;         //            its last frame (ClassWheelP1Look)
     int nOutLogged = 0;       // v6.9: the out sides last logged
+    float pos = 0.0f;         // v7.1: the carousel's turn (side index at the front, eased toward the picked one)
+    bool posSet = false;
+    LARGE_INTEGER last = {};  // v7.1: its last frame (the turn's time step)
 };
 Side g_side;
 
@@ -2742,6 +2745,23 @@ int SideNextIn(const bool* out, int n, int from, int dir)
             return i;
     return -1;
 }
+// v7.1: the carousel goes round - the next side not out from 'from' going 'dir', wrapping, else -1
+int SideNextWrap(const bool* out, int n, int from, int dir)
+{
+    for (int k = 1; k < n; ++k)
+    {
+        const int j = ((from + dir * k) % n + n) % n;
+        if (!out[j])
+            return j;
+    }
+    return -1;
+}
+// v7.1: CHOOSE YOUR SIDE with more than two sides is a carousel (as the class wheel): the picked side in front, the others
+// round it, smaller, darker and higher the further back; only the picked side's name shows
+constexpr float kCarBack = 0.55f;   // the size of the side furthest back, of the front one's
+constexpr float kCarLift = 0.07f;   // how much higher (of the screen height) the one furthest back stands
+constexpr float kCarRadius = 1.5f;  // the ring's radius, of the stock pair's distance from their centre (look.x)
+constexpr float kCarRadiusHz = 0.6f; // horizontal: of the distance between Classic's two side soldiers
 bool g_sideLookAllowed = false; // 20g-r10: split_spawn_menus.cpp can draw player 1's side screen in players 3 / 4's look
 int g_sideLookLines = 0;
 float g_sideSize = 0.75f;   // the side soldiers' size (1 = the game's own soldier's size)
@@ -3000,6 +3020,7 @@ void SideClear(const char* why, uintptr_t sdAlive)
         g_side.label[t] = 0;
     }
     g_side.made = false;
+    g_side.posSet = false; // v7.1: the carousel starts at the picked side next time
     g_side.look = false; // 20g-r10
     g_side.hz = false;   // 20g-r12
     if (g_side.groupShown && sdAlive)
@@ -3087,7 +3108,7 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
         g_side.count = 2;
         g_side.team[0] = 1;
         g_side.team[1] = 2;
-        if (!split)
+        if (!QuarterLook()) // v7.1: split screen too (4-player keeps the two stock sides)
         {
             int teams[kMaxSides] = {};
             const int n = SideTeamsNow(teams);
@@ -3132,10 +3153,14 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
             if (!team || !ReadWide(ReadU32(team + kTeamName), name, 48))
                 swprintf(name, 48, L"SIDE %d", g_side.team[i]);
             // the name under the soldier, in the text group (centre-anchored, reference units, y down)
-            const float lx = hzTexts ? hzNameX[i] : (look.textX + SideLabelOffset(i, g_side.count, look)) * RefW();
-            const float ly = hzTexts ? hzNameY : (SideLabelY(i, g_side.count, look) - 0.5f) * RefH(); // v6.7: its row
+            // v7.1: a carousel - every name where the front side's goes (only the picked one is shown)
+            const bool carName = g_side.count > 2;
+            const float lx = carName ? (hzTexts ? 0.5f * (hzNameX[0] + hzNameX[1]) : look.textX * RefW())
+                                     : (hzTexts ? hzNameX[i] : (look.textX + SideLabelOffset(i, g_side.count, look)) * RefW());
+            const float ly = carName ? (hzTexts ? hzNameY : (look.labelY - 0.5f) * RefH())
+                                     : (hzTexts ? hzNameY : (SideLabelY(i, g_side.count, look) - 0.5f) * RefH()); // v6.7: its row
             g_side.label[i] = TextNew(sd + kSdTextGroup, "gamefont_large", name, lx, ly,
-                                      hzTexts ? kHzTextScale : g_sideTextScale * SideTextK(g_side.count), kZText);
+                                      hzTexts ? kHzTextScale : g_sideTextScale * (carName ? 1.0f : SideTextK(g_side.count)), kZText);
             char a8[48] = {};
             WideCharToMultiByte(CP_UTF8, 0, name, -1, a8, sizeof(a8), nullptr, nullptr);
             if (RingBudget())
@@ -3193,15 +3218,15 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
     }
     else
     {
-        if (left)
+        if (left) // v7.1: round the carousel
         {
-            const int j = SideNextIn(out, nSides, g_side.pick, -1);
+            const int j = SideNextWrap(out, nSides, g_side.pick, -1);
             if (j >= 0)
                 g_side.pick = j;
         }
         if (right)
         {
-            const int j = SideNextIn(out, nSides, g_side.pick, +1);
+            const int j = SideNextWrap(out, nSides, g_side.pick, +1);
             if (j >= 0)
                 g_side.pick = j;
         }
@@ -3216,27 +3241,110 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
     }
     const float sizeK = SideSizeK(nSides, look);
     const float nameHalfW = nSides <= 3 ? 90.0f : (SideTopCount(nSides) <= 3 || nSides == 4 ? 64.0f : 48.0f); // v7.0
+    // v7.1: the carousel (more than two sides): its turn eased toward the picked side, the shortest way round (as the ring),
+    // then each side's place, size and nearness (1 front .. 0 back)
+    const bool car = nSides > 2 && !g_side.look;
+    float carX[kMaxSides] = {}, carY[kMaxSides] = {}, carSize[kMaxSides] = {}, carNear[kMaxSides] = {};
+    float carR = 0.0f;
+    if (car)
+    {
+        static LARGE_INTEGER freq = {};
+        if (!freq.QuadPart)
+            QueryPerformanceFrequency(&freq);
+        LARGE_INTEGER now = {};
+        QueryPerformanceCounter(&now);
+        float dt = 0.0f;
+        if (g_side.last.QuadPart && freq.QuadPart)
+            dt = static_cast<float>(static_cast<double>(now.QuadPart - g_side.last.QuadPart) / static_cast<double>(freq.QuadPart));
+        g_side.last = now;
+        if (dt < 0.0f || dt > 0.1f)
+            dt = 0.0f;
+        const float nf = static_cast<float>(nSides);
+        if (!g_side.posSet)
+        {
+            g_side.pos = static_cast<float>(g_side.pick);
+            g_side.posSet = true;
+        }
+        else
+        {
+            float d = static_cast<float>(g_side.pick) - g_side.pos;
+            while (d > nf * 0.5f)
+                d -= nf;
+            while (d <= -nf * 0.5f)
+                d += nf;
+            const float k = dt * kTurnRate;
+            g_side.pos += d * (k < 1.0f ? k : 1.0f);
+            if (d < 0.002f && d > -0.002f)
+                g_side.pos = static_cast<float>(g_side.pick);
+            while (g_side.pos < 0.0f)
+                g_side.pos += nf;
+            while (g_side.pos >= nf)
+                g_side.pos -= nf;
+        }
+        const float cx = hzModels ? 0.5f * (hzModelX[0] + hzModelX[1]) : 0.5f * W + look.center * W;
+        carR = hzModels ? kCarRadiusHz * (hzModelX[1] - hzModelX[0]) : kCarRadius * look.x * W;
+        const float feet = hzModels ? hzModelY : look.feet * H;
+        const float front = hzModels ? hzSize : look.size;
+        const float kPi = 3.14159265f;
+        for (int i = 0; i < nSides; ++i)
+        {
+            float ang = 2.0f * kPi * (static_cast<float>(i) - g_side.pos) / nf;
+            while (ang > kPi)
+                ang -= 2.0f * kPi;
+            while (ang <= -kPi)
+                ang += 2.0f * kPi;
+            const float nearness = (std::cos(ang) + 1.0f) * 0.5f;
+            carNear[i] = nearness;
+            carX[i] = cx + carR * std::sin(ang);
+            carY[i] = feet - kCarLift * H * (1.0f - nearness);
+            carSize[i] = front * (kCarBack + (1.0f - kCarBack) * nearness);
+        }
+    }
     int hover = -1;
+    float hoverNear = -1.0f; // v7.1: the nearest side under the cursor wins (the front one stands over the others)
     float boxes[kMaxSides][8] = {}; // 21j-r20: each side's soldier box and name box (units), for the click lines
     for (int i = 0; i < nSides && !g_side.look && !hz; ++i) // (20g-r10: not in players 3 / 4's look - no boxes of ours; 20g-r12: nor horizontal)
     {
-        const float x = 0.5f * W + look.center * W + SideOffset(i, nSides, look) * W;
-        const float y = SideFeetY(i, nSides, look) * H; // v6.7: its row
+        const float x = car ? carX[i] : 0.5f * W + look.center * W + SideOffset(i, nSides, look) * W;
+        const float y = car ? carY[i] : SideFeetY(i, nSides, look) * H; // v6.7: its row
         const ElemBase& b = g_side.droideka[i] ? db : sb;
         float x0, y0, x1, y1;
-        SoldierBox(x, y, b.f80 * look.size * sizeK * (g_side.droideka[i] ? g_dekaSize : 1.0f), g_side.droideka[i], &x0, &y0, &x1,
-                   &y1);
-        // the name under the soldier (centre-anchored text group: x from the centre, y from the top)
-        const float nx = g_mouse.w * 0.5f + (look.textX + SideLabelOffset(i, nSides, look)) * RefW();
-        const float ny = SideLabelY(i, nSides, look) * RefH();
-        if (MouseIn(x0, y0, x1, y1) || MouseIn(nx - nameHalfW, ny - 22.0f, nx + nameHalfW, ny + 22.0f))
+        SoldierBox(x, y, b.f80 * (car ? carSize[i] : look.size * sizeK) * (g_side.droideka[i] ? g_dekaSize : 1.0f), g_side.droideka[i],
+                   &x0, &y0, &x1, &y1);
+        // the name under the soldier (centre-anchored text group: x from the centre, y from the top); v7.1: the carousel
+        // shows the picked side's name only, under the front
+        const float nx = g_mouse.w * 0.5f + (look.textX + (car ? 0.0f : SideLabelOffset(i, nSides, look))) * RefW();
+        const float ny = (car ? look.labelY : SideLabelY(i, nSides, look)) * RefH();
+        const bool onName = (!car || i == g_side.pick) && MouseIn(nx - nameHalfW, ny - 22.0f, nx + nameHalfW, ny + 22.0f);
+        const float nearness = car ? carNear[i] : 1.0f;
+        if ((MouseIn(x0, y0, x1, y1) || onName) && (onName ? 2.0f : nearness) > hoverNear)
+        {
             hover = i;
+            hoverNear = onName ? 2.0f : nearness;
+        }
         const float b8[8] = { x0, y0, x1, y1, nx - nameHalfW, ny - 22.0f, nx + nameHalfW, ny + 22.0f };
         memcpy(boxes[i], b8, sizeof(b8));
     }
     const bool hoverOut = hover >= 0 && out[hover]; // v6.9: under the cursor but out - not picked, a click does nothing
-    if (hover >= 0 && !hoverOut)
+    if (hover >= 0 && !hoverOut && !car) // v7.1: the carousel turns on a click, not under the cursor (it would turn away)
         g_side.pick = hover;
+    // v7.1: the carousel and the mouse: a click on another side turns it to the front; a click on the front side (or its
+    // name) joins it; elsewhere nothing ([ClassWheel] MouseClicks=1) - horizontal / players 3 / 4's look: a click joins
+    if (car && mouseA && !hz)
+    {
+        if (hover >= 0 && !hoverOut && hover != g_side.pick)
+        {
+            g_side.pick = hover;
+            PlayUiSound(g_sndTick);
+            if (ClickLines())
+                Log("[wheel] %lu ms: mouse: click on side %d - the carousel turns to it", ScanMsSinceAttach(), hover + 1);
+        }
+        else if (hover >= 0 && hover == g_side.pick && !hoverOut)
+            a = true;
+        else if (!g_mouseClicks && !hoverOut)
+            a = true;
+        mouseA = false;
+    }
     if (g_side.pick != was && RingBudget())
         Log("[wheel] %lu ms: side screen: side %d picked%s", ScanMsSinceAttach(), g_side.pick + 1,
             hover >= 0 ? " (under the cursor)" : "");
@@ -3321,12 +3429,13 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
             continue;
         const ElemBase& b = g_side.droideka[i] ? db : sb;
         const float k = sb.s / b.s;
-        const float x = (hzModels && i < 2) ? hzModelX[i] : 0.5f * W + look.center * W + SideOffset(i, nSides, look) * W; // 20g-r12
-        const float y = hzModels ? hzModelY : SideFeetY(i, nSides, look) * H; // v6.7: its row
+        const float x = car ? carX[i]
+                            : ((hzModels && i < 2) ? hzModelX[i] : 0.5f * W + look.center * W + SideOffset(i, nSides, look) * W); // 20g-r12
+        const float y = car ? carY[i] : (hzModels ? hzModelY : SideFeetY(i, nSides, look) * H); // v6.7: its row
         float* const m = reinterpret_cast<float*>(e + kElemMatrix);
         for (int j = 0; j < 12; ++j)
             m[j] = b.matrix[j];
-        m[14] = b.matrix[14];
+        m[14] = b.matrix[14] - (car ? (1.0f - carNear[i]) * kSplitRingDepth * carR * k : 0.0f); // v7.1: the back ones further back
         m[15] = b.matrix[15];
         memcpy(reinterpret_cast<void*>(e + kElemRotOfs), b.rotOfs, sizeof(b.rotOfs));
         g_rf.setScale(reinterpret_cast<void*>(e), nullptr, b.s);
@@ -3334,17 +3443,20 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
         const uintptr_t set80 = VirtualAt(e, 0x38);
         if (set80)
             reinterpret_cast<ElemSetFloat_t>(set80)(reinterpret_cast<void*>(e), nullptr,
-                                                     b.f80 * (hzModels ? hzSize : look.size * sizeK) * (g_side.droideka[i] ? g_dekaSize : 1.0f));
+                                                     b.f80 * (car ? carSize[i] : (hzModels ? hzSize : look.size * sizeK)) *
+                                                         (g_side.droideka[i] ? g_dekaSize : 1.0f));
         // 18m: +14Ch is where the soldier aims, not a light - both keep the game's straight-ahead aim
         // 18n: the unpicked side dark (the group hands each child's colour to the model's draw)
         uint8_t* const c = reinterpret_cast<uint8_t*>(e + kElemColor);
         const uint8_t v = out[i] ? kOutGrey : (i == g_side.pick ? 0xFF : kDarkGrey); // v6.9: out - darker still
         c[0] = c[1] = c[2] = v;
         c[3] = 0xFF;
-        g_rf.setLayer(reinterpret_cast<void*>(e), nullptr, kZFront);
+        g_rf.setLayer(reinterpret_cast<void*>(e), nullptr, car ? kZFront + static_cast<int>((1.0f - carNear[i]) * 30.0f) : kZFront);
         g_rf.setVisible(reinterpret_cast<void*>(e), nullptr, 1);
         // 18l-r3: no animation on the side screen (no per-frame animation calls)
         TextGrey(g_side.label[i], i != g_side.pick || out[i]);
+        if (car && g_side.label[i]) // v7.1: only the picked side's name
+            g_rf.setVisible(reinterpret_cast<void*>(g_side.label[i]), nullptr, i == g_side.pick ? 1 : 0);
         if (out[i] && g_side.label[i]) // v6.9: an out side's name darker than an unpicked one's
         {
             uint8_t* const t = reinterpret_cast<uint8_t*>(g_side.label[i] + kElemColor);
@@ -6057,11 +6169,12 @@ namespace {
 // player 2's class ring: the same soldiers as player 1's ring, in his class screen's group. 20f-r2: three of them -
 // ring 0 = player 2's, rings 1 / 2 = players 3 / 4's (split_spawn_menus.cpp's own screens in their HUD roots). 20g-r11: ring 3 =
 // player 1's in players 3 / 4's look (4-player)
-constexpr int kRings = 4;
+constexpr int kRings = 8;     // v7.1: 4 - 7 = players 1 - 4's side carousels (ClassWheelSideRingFrame)
+constexpr int kSideRing0 = 4;
 
 int Ring2Player(int r)
 {
-    return r == 3 ? 1 : r + 2;
+    return r >= kSideRing0 ? r - kSideRing0 + 1 : (r == 3 ? 1 : r + 2);
 }
 struct Ring2
 {
@@ -6309,8 +6422,51 @@ int ClassWheelRingFrame(int ring, uintptr_t group, const uintptr_t* classes, int
 
 void ClassWheelRingClear(int ring, bool del, const char* why)
 {
-    if (ring >= 1 && ring < kRings)
+    if (ring >= 1 && ring < kSideRing0)
         Ring2Drop(ring, del, why ? why : "his class screen is not up");
+}
+
+// v7.1: the sides of this match for the side screens (Mashup Conquest: every playable team, else teams 1 and 2) and
+// whether a side is out of the match
+int ClassWheelSideTeams(int* teams, int max)
+{
+    int t[kMaxSides] = {};
+    const int n = SideTeamsNow(t);
+    int k = 0;
+    for (int i = 0; i < n && k < max; ++i)
+        teams[k++] = t[i];
+    return k;
+}
+bool ClassWheelSideOut(int team)
+{
+    return SideOutNow(team);
+}
+
+// v7.1: player p's (1 - 4) side carousel - each side's first class on a ring in `group` (as the class rings), turned to
+// `sel`, the others darker, a side out of the match darker still
+int ClassWheelSideRingFrame(int player, uintptr_t group, const uintptr_t* classes, const bool* out, int n, int sel, float cx,
+                            float cy, float width, float size, float lift, int style)
+{
+    if (player < 1 || player > 4)
+        return 0;
+    const int r = kSideRing0 + player - 1;
+    const int placed = RingFrame2(r, group, classes, n, sel, cx, cy, width, size, lift, cx, cy, style);
+    Ring2& R = g_ring2[r];
+    for (int i = 0; i < R.n && i < kRingMax; ++i)
+    {
+        if (!R.elem[i])
+            continue;
+        uint8_t* const c = reinterpret_cast<uint8_t*>(R.elem[i] + kElemColor);
+        const uint8_t v = (out && out[i]) ? kOutGrey : (i == sel ? 0xFF : kDarkGrey);
+        c[0] = c[1] = c[2] = v;
+        c[3] = 0xFF;
+    }
+    return placed;
+}
+void ClassWheelSideRingClear(int player, bool del, const char* why)
+{
+    if (player >= 1 && player <= 4)
+        Ring2Drop(kSideRing0 + player - 1, del, why ? why : "his side screen is not up");
 }
 
 // 20f-r2 / r4: an empty RedScreenGroupElement of the game's (its own constructor, the game's new) - players 3 and 4's
