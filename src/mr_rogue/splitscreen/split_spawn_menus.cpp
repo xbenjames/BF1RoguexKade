@@ -2255,6 +2255,8 @@ struct Flow
     uintptr_t sideName[2] = {};
     uintptr_t sideModel[2] = {}; // 18x: the side screen's two soldiers
     bool sideRing = false;       // v7.1: his side carousel is up (class_wheel.cpp's side ring 2) - more than two sides
+    int pickTeam = 0;            // v7.2: the carousel's picked side (its team - kept picked when a side leaves the carousel)
+    int shownTeam2 = 0;          // v7.2: the side whose name the carousel shows
     bool ringShown = false;      // 19g: his class ring is up (class_wheel.cpp's ring 2)
     uintptr_t sideRec = 0;       // 19g: the record / group the side soldiers were made in (deleted only while
     uintptr_t sideGroup = 0;     //      both are still the screen's, as the texts)
@@ -2477,16 +2479,31 @@ void TeamNameW(uintptr_t sm, int team, wchar_t* out, size_t cap)
 // v7.1: player 2's sides - Mashup Conquest: every playable team (up to 7, his side screen a carousel); 4-player and every
 // other match: teams 1 and 2
 constexpr int kP2MaxSides = 7;
-int P2Sides(int* teams)
+// v7.2: with more than two sides the ones out of the match are left off (the carousel without them); total = the match's sides
+int P2Sides(int* teams, int* total = nullptr)
 {
     if (!P2Quarter())
     {
-        const int n = ClassWheelSideTeams(teams, kP2MaxSides);
+        int all[kP2MaxSides] = {};
+        const int n = ClassWheelSideTeams(all, kP2MaxSides);
         if (n >= 2)
-            return n;
+        {
+            int k = 0;
+            for (int i = 0; i < n; ++i)
+                if (n <= 2 || !ClassWheelSideOut(all[i]))
+                    teams[k++] = all[i];
+            if (k == 0)
+                for (int i = 0; i < n; ++i)
+                    teams[k++] = all[i];
+            if (total)
+                *total = n;
+            return k;
+        }
     }
     teams[0] = 1;
     teams[1] = 2;
+    if (total)
+        *total = 2;
     return 2;
 }
 // v7.1: the index of `team` among his sides (0 if it is not one of them)
@@ -3135,8 +3152,9 @@ void FlowTextsMakeOnce(int scr, uintptr_t sm)
             // v7.1: more than two sides (Mashup Conquest) - a carousel (SideFrame turns it): the title and the picked side's
             // name only, the soldiers on class_wheel.cpp's side ring 2
             int teams[kP2MaxSides] = {};
-            const int nS = P2Sides(teams);
-            if (nS > 2)
+            int totalS = 2;
+            const int nS = P2Sides(teams, &totalS);
+            if (totalS > 2) // v7.2: the match's sides (the ones out are not on it)
             {
                 const bool hzC = P2Hz();
                 if (hzC)
@@ -3152,6 +3170,10 @@ void FlowTextsMakeOnce(int scr, uintptr_t sm)
                                          : FlowTextAt(scr, name, 0.5f * (kSideNameX0 + kSideNameX1), kSideNameY, "side name (carousel)");
                 g_flow.sideName[1] = 0;
                 g_flow.shownPick = -1;
+                g_flow.pickTeam = teams[g_flow.pick];
+                g_flow.shownTeam2 = teams[g_flow.pick];
+                g_flow.prompt = hzC ? FlowTextAtS(scr, L"SELECT SIDE", kHzPromptPostX, kHzPromptY, kHzPromptScale, "prompt (side, horizontal)")
+                                    : FlowTextAt(scr, L"SELECT SIDE", kPromptX, kPromptY, "prompt (side)"); // v7.2
                 MapElementHide(true);
                 return;
             }
@@ -3171,6 +3193,7 @@ void FlowTextsMakeOnce(int scr, uintptr_t sm)
                     g_flow.sideModel[i] = FlowModelAt(scr, TeamClass(sm, i + 1, 0), i == 0 ? kHzSideX0 : kHzSideX1, kHzSideFeetY, size,
                                                       i == 0 ? "side 1 (horizontal)" : "side 2 (horizontal)");
             }
+            g_flow.prompt = FlowTextAtS(scr, L"SELECT SIDE", kHzPromptPostX, kHzPromptY, kHzPromptScale, "prompt (side, horizontal)"); // v7.2
             MapElementHide(true);
             return;
         }
@@ -3184,6 +3207,7 @@ void FlowTextsMakeOnce(int scr, uintptr_t sm)
                 g_flow.sideModel[i] = FlowModelAt(scr, TeamClass(sm, i + 1, 0), i == 0 ? kSideModelX0 : kSideModelX1, kSideModelY,
                                                   kSideModelSize, i == 0 ? "side 1" : "side 2");
         }
+        g_flow.prompt = FlowTextAt(scr, L"SELECT SIDE", kPromptX, kPromptY, "prompt (side)"); // v7.2
         MapElementHide(true);
     }
     else if (scr == kScrPost)
@@ -4033,8 +4057,13 @@ void SideCarouselFrame(uintptr_t sm, const int* teams, int n, bool left, bool ri
     bool out[kP2MaxSides] = {};
     for (int i = 0; i < n; ++i)
         out[i] = ClassWheelSideOut(teams[i]);
+    // v7.2: the side he had picked stays picked when the list changes (a side out of the match leaves the carousel)
+    if (g_flow.pickTeam)
+        for (int i = 0; i < n; ++i)
+            if (teams[i] == g_flow.pickTeam)
+                g_flow.pick = i;
     if (g_flow.pick < 0 || g_flow.pick >= n)
-        g_flow.pick = 0;
+        g_flow.pick = n - 1;
     const int was = g_flow.pick;
     for (int dir = -1; dir <= 1; dir += 2)
     {
@@ -4062,9 +4091,11 @@ void SideCarouselFrame(uintptr_t sm, const int* teams, int n, bool left, bool ri
         }
     if (g_flow.pick != was)
         ClassWheelPlaySound(0);
-    if (g_flow.pick != g_flow.shownPick)
+    g_flow.pickTeam = teams[g_flow.pick];
+    if (g_flow.pick != g_flow.shownPick || teams[g_flow.pick] != g_flow.shownTeam2)
     {
         g_flow.shownPick = g_flow.pick;
+        g_flow.shownTeam2 = teams[g_flow.pick];
         wchar_t name[48];
         TeamNameW(sm, teams[g_flow.pick], name, 48);
         if (g_flow.sideName[0])
@@ -4145,8 +4176,9 @@ void SideFrame(uintptr_t sm, bool left, bool right, bool a)
 {
     {
         int teams[kP2MaxSides] = {};
-        const int n = P2Sides(teams);
-        if (n > 2) // v7.1
+        int total = 2;
+        const int n = P2Sides(teams, &total);
+        if (total > 2) // v7.1 / v7.2: the match has more than two sides (the ones out are not on the carousel)
         {
             SideCarouselFrame(sm, teams, n, left, right, a);
             return;

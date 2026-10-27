@@ -2688,6 +2688,8 @@ struct Side
     float pos = 0.0f;         // v7.1: the carousel's turn (side index at the front, eased toward the picked one)
     bool posSet = false;
     LARGE_INTEGER last = {};  // v7.1: its last frame (the turn's time step)
+    int total = 2;            // v7.2: the match's sides (more than two: a carousel, the sides out of the match left off it)
+    int keepTeam = 0;         // v7.2: the side picked when the carousel was made again (a side went out), kept picked
 };
 Side g_side;
 
@@ -3045,6 +3047,7 @@ void SideClearFor(const char* why, uintptr_t sd)
 
 // the side screen, every frame while it is up: -1 = side screen off (the old A applies),
 // 0 = still choosing, 1 = A joined the picked side
+bool MouseOnPrompt(); // v7.2: defined below
 int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
 {
     if (!g_sideOk || !g_ringOk || !TextOk() || !g_selectTeam)
@@ -3101,24 +3104,49 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
         if (hzModels)
             hzSize = kHzSideTall * h / kHzSoldierUnits;
     }
+    // v7.2: the carousel holds only the sides still in the match - one going out while the screen is up: made again without it
+    // (this frame, the picked side kept)
+    if (g_side.made && !g_side.look && g_side.total > 2)
+    {
+        bool gone = false;
+        for (int i = 0; i < g_side.count && !gone; ++i)
+            gone = SideOutNow(g_side.team[i]);
+        if (gone)
+        {
+            const int keep = (g_side.pick >= 0 && g_side.pick < g_side.count) ? g_side.team[g_side.pick] : 0;
+            SideClear("a side is out of the match - the carousel made again without it", sd);
+            g_side.keepTeam = keep;
+        }
+    }
     if (!g_side.made)
     {
         const uint32_t shown = ReadU32(sd + kTailStart + 4 * kIdxTeamShown);
         // v6.5: the sides (Mashup: up to 7, the 1-player side screen only)
         g_side.count = 2;
+        g_side.total = 2;
         g_side.team[0] = 1;
         g_side.team[1] = 2;
         if (!QuarterLook()) // v7.1: split screen too (4-player keeps the two stock sides)
         {
             int teams[kMaxSides] = {};
             const int n = SideTeamsNow(teams);
-            g_side.count = n;
+            // v7.2: more than two sides - the ones out of the match are not on the carousel at all (Ben: "straight up
+            // removed"); two sides stay as they were (an out one greyed)
+            int k = 0;
             for (int i = 0; i < n; ++i)
-                g_side.team[i] = teams[i];
+                if (n <= 2 || !SideOutNow(teams[i]))
+                    g_side.team[k++] = teams[i];
+            if (k == 0) // (every side out - the round is over: all of them, greyed)
+                for (int i = 0; i < n; ++i)
+                    g_side.team[k++] = teams[i];
+            g_side.count = k;
+            g_side.total = n;
         }
+        const uint32_t want = g_side.keepTeam ? static_cast<uint32_t>(g_side.keepTeam) : shown;
+        g_side.keepTeam = 0;
         g_side.pick = 0;
         for (int i = 0; i < g_side.count; ++i)
-            if (static_cast<uint32_t>(g_side.team[i]) == shown)
+            if (static_cast<uint32_t>(g_side.team[i]) == want)
                 g_side.pick = i;
         // v6.9: not a side that is out (his own side defeated: the first one still in)
         if (SideOutNow(g_side.team[g_side.pick]))
@@ -3154,7 +3182,7 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
                 swprintf(name, 48, L"SIDE %d", g_side.team[i]);
             // the name under the soldier, in the text group (centre-anchored, reference units, y down)
             // v7.1: a carousel - every name where the front side's goes (only the picked one is shown)
-            const bool carName = g_side.count > 2;
+            const bool carName = g_side.total > 2; // v7.2: the match's sides (some may be off it)
             const float lx = carName ? (hzTexts ? 0.5f * (hzNameX[0] + hzNameX[1]) : look.textX * RefW())
                                      : (hzTexts ? hzNameX[i] : (look.textX + SideLabelOffset(i, g_side.count, look)) * RefW());
             const float ly = carName ? (hzTexts ? hzNameY : (look.labelY - 0.5f) * RefH())
@@ -3198,6 +3226,7 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
     // v6.5: more than two sides - left / right step through them
     const int was = g_side.pick;
     const int nSides = g_side.count;
+    const bool car = g_side.total > 2 && !g_side.look; // v7.1 / v7.2: the carousel (the match has more than two sides)
     // v6.9: the sides out of the match (greyed out, skipped, not joined)
     bool out[kMaxSides] = {};
     int nOut = 0;
@@ -3209,7 +3238,7 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
         g_side.nOutLogged = nOut;
         Log("[wheel] %lu ms: side screen: %d side(s) out of the match - greyed out, not pickable", ScanMsSinceAttach(), nOut);
     }
-    if (nSides <= 2)
+    if (!car && nSides <= 2)
     {
         if (left && !out[0])
             g_side.pick = 0;
@@ -3243,7 +3272,6 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
     const float nameHalfW = nSides <= 3 ? 90.0f : (SideTopCount(nSides) <= 3 || nSides == 4 ? 64.0f : 48.0f); // v7.0
     // v7.1: the carousel (more than two sides): its turn eased toward the picked side, the shortest way round (as the ring),
     // then each side's place, size and nearness (1 front .. 0 back)
-    const bool car = nSides > 2 && !g_side.look;
     float carX[kMaxSides] = {}, carY[kMaxSides] = {}, carSize[kMaxSides] = {}, carNear[kMaxSides] = {};
     float carR = 0.0f;
     if (car)
@@ -3324,6 +3352,15 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
         }
         const float b8[8] = { x0, y0, x1, y1, nx - nameHalfW, ny - 22.0f, nx + nameHalfW, ny + 22.0f };
         memcpy(boxes[i], b8, sizeof(b8));
+    }
+    // v7.2: a click on "SELECT SIDE" joins the picked side
+    if (mouseA && !g_side.look && !hz && MouseOnPrompt())
+    {
+        if (ClickLines())
+            Log("[wheel] %lu ms: mouse: click on SELECT SIDE - side %d joined", ScanMsSinceAttach(), g_side.pick + 1);
+        a = true;
+        mouseA = false;
+        hover = -1;
     }
     const bool hoverOut = hover >= 0 && out[hover]; // v6.9: under the cursor but out - not picked, a click does nothing
     if (hover >= 0 && !hoverOut && !car) // v7.1: the carousel turns on a click, not under the cursor (it would turn away)
@@ -4088,6 +4125,11 @@ void ScreenTextsUpdate(uintptr_t sd, LONG flow)
                 g_rf.setVisible(reinterpret_cast<void*>(g_stx.hints), nullptr, 0);
             g_stx.prompt = ClassWheelHorizontal() ? PromptTextHz(sd, L"SELECT SPAWNPOINT", kHzPromptPostX) // 20g-r12
                                                   : PromptText(sd, L"SELECT SPAWNPOINT", PromptX(), PromptY());
+        }
+        else if (flow == 1) // v7.2 (Ben): the side screen's "SELECT SIDE", across from BACK (as the other screens' prompts)
+        {
+            g_stx.prompt = ClassWheelHorizontal() ? PromptTextHz(sd, L"SELECT SIDE", kHzPromptPostX)
+                                                  : PromptText(sd, L"SELECT SIDE", PromptX(), PromptY());
         }
         else if (flow == 2)
         {
