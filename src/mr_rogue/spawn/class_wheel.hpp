@@ -207,6 +207,9 @@ bool ClassWheelSideOut(int team);
 int ClassWheelSideRingFrame(int player, uintptr_t group, const uintptr_t* classes, const bool* out, int n, int sel, float cx,
                             float cy, float width, float size, float lift, int style);
 void ClassWheelSideRingClear(int player, bool del, const char* why);
+// v7.3: slots 5 - 8 of ClassWheelSideRingFrame / Clear = players 1 - 4's side carousels in players 3 / 4's look (4-player).
+// Player 1's side screen's sides (teams, how many; total = the match's sides, more than two: the ones out are left off).
+int ClassWheelP1Sides(int* teams, int max, int* total);
 // 20f-r2 / r4: a new, empty RedScreenGroupElement (the game's new and its own constructor; not in any group or root
 // yet - its root anchor / flag are the fields AddToRoot sets), or 0 if
 // its constructor was not found at start. Delete it with ClassWheelDeleteElement (its children are only taken out of

@@ -2482,7 +2482,7 @@ constexpr int kP2MaxSides = 7;
 // v7.2: with more than two sides the ones out of the match are left off (the carousel without them); total = the match's sides
 int P2Sides(int* teams, int* total = nullptr)
 {
-    if (!P2Quarter())
+    // v7.3: 4-player too (players 3 / 4 use it as well)
     {
         int all[kP2MaxSides] = {};
         const int n = ClassWheelSideTeams(all, kP2MaxSides);
@@ -3132,6 +3132,41 @@ void FlowTextsMakeOnce(int scr, uintptr_t sm)
             MapElementHide(true);
             return;
         }
+        {
+            // v7.1: more than two sides (Mashup Conquest) - a carousel (SideFrame turns it): the title and the picked side's
+            // name only, the soldiers on class_wheel.cpp's side ring 2
+            int teams[kP2MaxSides] = {};
+            int totalS = 2;
+            const int nS = P2Sides(teams, &totalS);
+            if (totalS > 2) // v7.2: the match's sides (the ones out are not on it)
+            {
+                const bool qC = P2Quarter(); // v7.3: 4-player - players 3 / 4's places
+                const bool hzC = !qC && P2Hz();
+                if (qC)
+                    FlowTextAtS(scr, L"CHOOSE YOUR SIDE", 0.5f, kQTitleY, kQTitleScale, "side title (carousel, 4-player)");
+                else if (hzC)
+                    FlowTextAtS(scr, L"CHOOSE YOUR SIDE", kHzTitleX, kHzTitleY, kHzTextScale, "side title (carousel, horizontal)");
+                else
+                    FlowTextAt(scr, L"CHOOSE YOUR SIDE", kSideTitleX, kSideTitleY, "side title (carousel)");
+                if (g_flow.pick < 0 || g_flow.pick >= nS)
+                    g_flow.pick = 0;
+                wchar_t name[48];
+                TeamNameW(sm, teams[g_flow.pick], name, 48);
+                g_flow.sideName[0] = qC ? FlowTextAtS(scr, name, 0.5f, kQSideNameY, kQNameScale, "side name (carousel, 4-player)")
+                                     : hzC ? FlowTextAtS(scr, name, 0.5f * (kHzNameX0 + kHzNameX1), kHzNameY, kHzTextScale,
+                                                         "side name (carousel, horizontal)")
+                                           : FlowTextAt(scr, name, 0.5f * (kSideNameX0 + kSideNameX1), kSideNameY, "side name (carousel)");
+                g_flow.sideName[1] = 0;
+                g_flow.shownPick = -1;
+                g_flow.pickTeam = teams[g_flow.pick];
+                g_flow.shownTeam2 = teams[g_flow.pick];
+                g_flow.prompt = qC ? FlowTextAtS(scr, L"SELECT SIDE", 0.5f, kQPromptY, kQPromptScale, "prompt (side, 4-player)")
+                                : hzC ? FlowTextAtS(scr, L"SELECT SIDE", kHzPromptPostX, kHzPromptY, kHzPromptScale, "prompt (side, horizontal)")
+                                      : FlowTextAt(scr, L"SELECT SIDE", kPromptX, kPromptY, "prompt (side)"); // v7.2
+                MapElementHide(true);
+                return;
+            }
+        }
         if (P2Quarter()) // 20g-r7: 4-player - as players 3 / 4's side screens
         {
             FlowTextAtS(scr, L"CHOOSE YOUR SIDE", 0.5f, kQTitleY, kQTitleScale, "side title (4-player)");
@@ -3147,36 +3182,6 @@ void FlowTextsMakeOnce(int scr, uintptr_t sm)
             g_flow.prompt = FlowTextAtS(scr, L"SELECT SIDE", 0.5f, kQPromptY, kQPromptScale, "prompt (4-player)");
             MapElementHide(true);
             return;
-        }
-        {
-            // v7.1: more than two sides (Mashup Conquest) - a carousel (SideFrame turns it): the title and the picked side's
-            // name only, the soldiers on class_wheel.cpp's side ring 2
-            int teams[kP2MaxSides] = {};
-            int totalS = 2;
-            const int nS = P2Sides(teams, &totalS);
-            if (totalS > 2) // v7.2: the match's sides (the ones out are not on it)
-            {
-                const bool hzC = P2Hz();
-                if (hzC)
-                    FlowTextAtS(scr, L"CHOOSE YOUR SIDE", kHzTitleX, kHzTitleY, kHzTextScale, "side title (carousel, horizontal)");
-                else
-                    FlowTextAt(scr, L"CHOOSE YOUR SIDE", kSideTitleX, kSideTitleY, "side title (carousel)");
-                if (g_flow.pick < 0 || g_flow.pick >= nS)
-                    g_flow.pick = 0;
-                wchar_t name[48];
-                TeamNameW(sm, teams[g_flow.pick], name, 48);
-                g_flow.sideName[0] = hzC ? FlowTextAtS(scr, name, 0.5f * (kHzNameX0 + kHzNameX1), kHzNameY, kHzTextScale,
-                                                       "side name (carousel, horizontal)")
-                                         : FlowTextAt(scr, name, 0.5f * (kSideNameX0 + kSideNameX1), kSideNameY, "side name (carousel)");
-                g_flow.sideName[1] = 0;
-                g_flow.shownPick = -1;
-                g_flow.pickTeam = teams[g_flow.pick];
-                g_flow.shownTeam2 = teams[g_flow.pick];
-                g_flow.prompt = hzC ? FlowTextAtS(scr, L"SELECT SIDE", kHzPromptPostX, kHzPromptY, kHzPromptScale, "prompt (side, horizontal)")
-                                    : FlowTextAt(scr, L"SELECT SIDE", kPromptX, kPromptY, "prompt (side)"); // v7.2
-                MapElementHide(true);
-                return;
-            }
         }
         if (P2Hz()) // 20g-r12: horizontal - the Classic Collection's side screen, as player 1's (class_wheel.cpp's kHz*)
         {
@@ -4104,20 +4109,21 @@ void SideCarouselFrame(uintptr_t sm, const int* teams, int n, bool left, bool ri
             ClassWheelTextGrey(g_flow.sideName[0], out[g_flow.pick]);
         }
     }
-    if (g_soldiersWanted)
+    if (g_soldiersWanted && !g_flow.sideLook) // (v7.3: in players 3 / 4's look Side12Frame draws it)
     {
-        const bool hz = P2Hz();
+        const bool quarter = P2Quarter(); // v7.3: 4-player - players 3 / 4's places
+        const bool hz = !quarter && P2Hz();
         const char* panel = nullptr;
         const uintptr_t group = ScreenGroup(kScrSide, &panel);
-        const float fx0 = hz ? kHzSideX0 : kSideModelX0;
-        const float fx1 = hz ? kHzSideX1 : kSideModelX1;
-        const float fy = hz ? kHzSideFeetY : kSideModelY;
+        const float fx0 = quarter ? kQSideX[0] : (hz ? kHzSideX0 : kSideModelX0);
+        const float fx1 = quarter ? kQSideX[1] : (hz ? kHzSideX1 : kSideModelX1);
+        const float fy = quarter ? kQSideFeetY : (hz ? kHzSideFeetY : kSideModelY);
         float x0 = 0.0f, y0 = 0.0f, x1 = 0.0f, y1 = 0.0f, xt = 0.0f, yt = 0.0f;
         if (group && (ReadU32(group + kElemFlags) & 0x100) && RootPlace(group, fx0, fy, &x0, &y0) &&
             RootPlace(group, fx1, fy, &x1, &y1) && RootPlace(group, 0.5f * (fx0 + fx1), fy - 0.07f, &xt, &yt) &&
             (!g_flow.sideRing || group == g_flow.sideGroup))
         {
-            float size = kSideModelSize;
+            float size = quarter ? kQSideSize : kSideModelSize;
             if (hz)
             {
                 float w = 0.0f, h = 0.0f, ox = 0.0f, oy = 0.0f, kx = 0.0f, ky = 0.0f;
@@ -5239,6 +5245,9 @@ struct Flow34
     int n = 0;
     uintptr_t name[2] = {};    // side screen: the two sides' names
     uintptr_t model[2] = {};   //              and soldiers
+    bool sideRing = false;     // v7.3: his side carousel (more than two sides: class_wheel.cpp's side ring slot k + 7)
+    int pickTeam = 0;          // v7.3: the carousel's picked side (kept picked when a side leaves it)
+    int shownTeam2 = 0;        // v7.3: the side whose name it shows
     uintptr_t main = 0;        // spawn point screen: the post's name; class screen: the class name
     uintptr_t count = 0;       // spawn point screen: "2 / 5"
     uintptr_t veh = 0;         // spawn point screen: the vehicles at the post
@@ -5477,6 +5486,59 @@ int F34Ring(const Flow34& f)
     return f.k >= 0 ? f.k + 1 : (f.k == -2 ? 3 : -1);
 }
 
+// v7.3: his sides (players 1 / 2 in players 3 / 4's look: their own side screens' lists; players 3 / 4: the match's)
+int F34Sides(const Flow34& f, int* teams, int* total)
+{
+    if (f.k == -2)
+    {
+        const int n = ClassWheelP1Sides(teams, kP2MaxSides, total);
+        if (n > 0)
+            return n;
+    }
+    return P2Sides(teams, total);
+}
+bool F34Hz(const Flow34& f); // (below)
+// v7.3: his side carousel (more than two sides), each frame: the picked side's name, every side's first soldier on a ring in his
+// group (as player 2's: class_wheel.cpp's side ring, Classic's arrangement) at the two-side screen's places
+void F34SideCarousel(Flow34& f, uintptr_t sm, const int* teams, int n, int pick)
+{
+    if (n <= 0 || pick < 0 || pick >= n)
+        return;
+    if (teams[pick] != f.shownTeam2 && f.name[0])
+    {
+        f.shownTeam2 = teams[pick];
+        wchar_t name[48];
+        TeamNameW(sm, teams[pick], name, 48);
+        ClassWheelSetText(f.name[0], name);
+    }
+    if (!g_soldiersWanted || !f.group)
+        return;
+    const bool hz = f.k >= 0 && F34Hz(f);
+    float hw = 0.0f;
+    float hh = 0.0f;
+    if (hz && !F34Place(f, 1.0f, 1.0f, &hw, &hh))
+        return;
+    const float fx0 = hz ? kHzSideX0 : kF34SideX[0];
+    const float fx1 = hz ? kHzSideX1 : kF34SideX[1];
+    const float fy = hz ? kHzSideFeetY : kF34SideFeetY;
+    float x0 = 0.0f, y0 = 0.0f, x1 = 0.0f, y1 = 0.0f, xt = 0.0f, yt = 0.0f;
+    if (!F34Place(f, fx0, fy, &x0, &y0) || !F34Place(f, fx1, fy, &x1, &y1) || !F34Place(f, 0.5f * (fx0 + fx1), fy - 0.07f, &xt, &yt))
+        return;
+    uintptr_t classes[kP2MaxSides] = {};
+    const bool out[kP2MaxSides] = {};
+    for (int i = 0; i < n && i < kP2MaxSides; ++i)
+        classes[i] = TeamClass(sm, teams[i], 0);
+    const float size = hz ? kHzSideTall * hh / kHzSoldierUnits : kF34SideSize;
+    const float cx = 0.5f * (x0 + x1);
+    const float cy = 0.5f * (y0 + y1);
+    const int placed = ClassWheelSideRingFrame(f.k + 7, f.group, classes, out, n, pick, cx, cy, (hz ? 0.6f : 0.75f) * (x1 - x0), size,
+                                               cy - yt, kRingStyleClassic);
+    if (!f.sideRing && F34Budget(f))
+        Log("[p34spawn] %lu ms: player %d: side carousel (%d sides%s): %d placed, centre %.0f %.0f", ScanMsSinceAttach(), f.k + 3, n,
+            hz ? ", horizontal" : "", placed, cx, cy);
+    f.sideRing = true;
+}
+
 // our elements deleted (del: the group and the match are alive) or forgotten (left in the group, not touched)
 void F34ElemsDrop(Flow34& f, bool del, const char* why)
 {
@@ -5495,6 +5557,10 @@ void F34ElemsDrop(Flow34& f, bool del, const char* why)
     if (f.ringShown)
         ClassWheelRingClear(F34Ring(f), del, why);
     f.ringShown = false;
+    if (f.sideRing) // v7.3
+        ClassWheelSideRingClear(f.k + 7, del, why);
+    f.sideRing = false;
+    f.shownTeam2 = 0;
     f.name[0] = f.name[1] = 0;
     f.model[0] = f.model[1] = 0;
     f.main = f.count = f.veh = f.prompt = 0;
@@ -6393,7 +6459,23 @@ void F34Make(Flow34& f, uintptr_t sm)
     // 21j-r9: the console windows on the spawn point and class screens (the texts below if they cannot be made)
     if ((f.screen == kScrPost || f.screen == kScrClass) && F34WindowsMake(f, sm, hz, true))
         return;
-    if (f.screen == kScrSide && hz)
+    int carTeams[kP2MaxSides] = {};
+    int carTotal = 2;
+    if (f.screen == kScrSide)
+        F34Sides(f, carTeams, &carTotal);
+    if (f.screen == kScrSide && carTotal > 2)
+    {
+        // v7.3: more than two sides - a carousel (F34SideFrame turns it): the title, the picked side's name, SELECT SIDE
+        F34Text(f, L"CHOOSE YOUR SIDE", hz ? kHzTitleX : 0.5f, hz ? kHzTitleY : kF34TitleY, hz ? kHzTextScale : kF34TitleScale,
+                "side title (carousel)");
+        f.name[0] = F34Text(f, L"", hz ? 0.5f * (kHzNameX0 + kHzNameX1) : 0.5f, hz ? kHzNameY : kF34SideNameY,
+                            hz ? kHzTextScale : kF34NameScale, "side name (carousel)");
+        f.name[1] = 0;
+        f.shownTeam2 = 0;
+        f.prompt = F34Text(f, L"SELECT SIDE", hz ? kHzPromptPostX : 0.5f, hz ? kHzPromptY : kF34PromptY,
+                           hz ? kHzPromptScale : kF34PromptScale, "prompt");
+    }
+    else if (f.screen == kScrSide && hz)
     {
         // as player 2's horizontal side screen: the title, the two sides' soldiers and names (no SELECT SIDE: Classic has none)
         F34Text(f, L"CHOOSE YOUR SIDE", kHzTitleX, kHzTitleY, kHzTextScale, "side title (horizontal)");
@@ -8800,27 +8882,53 @@ void F34NewMatch(Flow34& f, uintptr_t sm, long sdDeletes)
 
 void F34SideFrame(Flow34& f, uintptr_t sm, bool left, bool right, bool a)
 {
-    if (left && f.pick != 0)
+    // v7.3: more than two sides - the carousel (left / right turn it round, the side he had picked kept picked when one goes)
+    int teams[kP2MaxSides] = {};
+    int total = 2;
+    const int n = F34Sides(f, teams, &total);
+    const bool car = total > 2 && n > 0;
+    if (car)
     {
-        f.pick = 0;
-        ClassWheelPlaySound(0);
+        if (f.pickTeam)
+            for (int i = 0; i < n; ++i)
+                if (teams[i] == f.pickTeam)
+                    f.pick = i;
+        if (f.pick < 0 || f.pick >= n)
+            f.pick = n - 1;
+        const int was = f.pick;
+        if (left)
+            f.pick = (f.pick + n - 1) % n;
+        if (right)
+            f.pick = (f.pick + 1) % n;
+        if (f.pick != was)
+            ClassWheelPlaySound(0);
+        f.pickTeam = teams[f.pick];
+        F34SideCarousel(f, sm, teams, n, f.pick);
     }
-    if (right && f.pick != 1)
+    else
     {
-        f.pick = 1;
-        ClassWheelPlaySound(0);
-    }
-    if (f.pick != f.shownPick)
-    {
-        f.shownPick = f.pick;
-        ClassWheelTextGrey(f.name[0], f.pick != 0);
-        ClassWheelTextGrey(f.name[1], f.pick != 1);
-        ClassWheelModelGrey(f.model[0], f.pick != 0);
-        ClassWheelModelGrey(f.model[1], f.pick != 1);
+        if (left && f.pick != 0)
+        {
+            f.pick = 0;
+            ClassWheelPlaySound(0);
+        }
+        if (right && f.pick != 1)
+        {
+            f.pick = 1;
+            ClassWheelPlaySound(0);
+        }
+        if (f.pick != f.shownPick)
+        {
+            f.shownPick = f.pick;
+            ClassWheelTextGrey(f.name[0], f.pick != 0);
+            ClassWheelTextGrey(f.name[1], f.pick != 1);
+            ClassWheelModelGrey(f.model[0], f.pick != 0);
+            ClassWheelModelGrey(f.model[1], f.pick != 1);
+        }
     }
     if (!a)
         return;
-    const int team = f.pick + 1;
+    const int team = car ? teams[f.pick] : f.pick + 1;
     if (team != f.team)
     {
         f.post = 0; // another side: its own posts and classes
@@ -9301,6 +9409,21 @@ void F34FrameOne(Flow34& f, uintptr_t sm, long deletes)
         {
             f.pick = t == 2 ? 1 : 0;
             f.team = t == 2 ? 2 : 1;
+            {
+                // v7.3: more than two sides - his own side on the carousel if he has one of them, else the first
+                int st[kP2MaxSides] = {};
+                int tot = 2;
+                const int ns = P2Sides(st, &tot);
+                if (tot > 2 && ns > 0)
+                {
+                    f.pick = 0;
+                    for (int i = 0; i < ns; ++i)
+                        if (st[i] == t)
+                            f.pick = i;
+                    f.team = st[f.pick];
+                }
+                f.pickTeam = f.team;
+            }
             // 21g-r3: sides locked (campaign / Galactic Conquest): no side screen - the side he has to play
             const int locked = SidesLockedNow();
             if (locked == 1)
@@ -9336,7 +9459,7 @@ void F34FrameOne(Flow34& f, uintptr_t sm, long deletes)
                 Log("[p34spawn] %lu ms: player %d: sides %s - the side screen (his character's team %ld)", ScanMsSinceAttach(),
                     f.k + 3, locked == 0 ? "can be switched" : "NOT known", static_cast<long>(t));
         }
-        else if ((t == 1 || t == 2) && t != f.team)
+        else if (t >= 1 && t <= 7 && t != f.team) // v7.3: teams 1 - 7 (Mashup)
         {
             if (F34Budget(f))
                 Log("[p34spawn] %lu ms: player %d is on side %ld, not %d - his screens follow the game", ScanMsSinceAttach(), f.k + 3,
@@ -9627,14 +9750,23 @@ void Side12Make(Flow34& f, uintptr_t sm, int root, int scr, int team)
     }
     else if (scr == kScrSide)
     {
+        int carTeams[kP2MaxSides] = {};
+        int carTotal = 2;
+        F34Sides(f, carTeams, &carTotal);
         F34Text(f, L"CHOOSE YOUR SIDE", 0.5f, kF34TitleY, kF34TitleScale, "side title");
-        for (int i = 0; i < 2; ++i)
+        if (carTotal > 2) // v7.3: more than two sides - the carousel (Side12Frame turns it): the picked side's name only
         {
-            wchar_t name[48];
-            TeamNameW(sm, i + 1, name, 48);
-            f.name[i] = F34Text(f, name, kF34SideX[i], kF34SideNameY, kF34NameScale, i == 0 ? "side 1 name" : "side 2 name");
-            f.model[i] = F34Model(f, TeamClass(sm, i + 1, 0), kF34SideX[i], kF34SideFeetY, kF34SideSize, i == 0 ? "side 1" : "side 2");
+            f.name[0] = F34Text(f, L"", 0.5f, kF34SideNameY, kF34NameScale, "side name (carousel)");
+            f.name[1] = 0;
         }
+        else
+            for (int i = 0; i < 2; ++i)
+            {
+                wchar_t name[48];
+                TeamNameW(sm, i + 1, name, 48);
+                f.name[i] = F34Text(f, name, kF34SideX[i], kF34SideNameY, kF34NameScale, i == 0 ? "side 1 name" : "side 2 name");
+                f.model[i] = F34Model(f, TeamClass(sm, i + 1, 0), kF34SideX[i], kF34SideFeetY, kF34SideSize, i == 0 ? "side 1" : "side 2");
+            }
         f.prompt = F34Text(f, L"SELECT SIDE", 0.5f, kF34PromptY, kF34PromptScale, "prompt");
     }
     else if (scr == kScrPost) // 20g-r11: as F34Make's spawn point screen with his map (class_wheel.cpp put it in the left)
@@ -9809,7 +9941,7 @@ void Side12Frame(uintptr_t sm, long deletes)
                 {
                     static const char* const kP1Screens[4] = { nullptr, "ifs_readyselect1", "ifs_mapselect1", "ifs_charselect1" };
                     const int s2 = flow == 1 ? kScrSide : (flow == 3 ? kScrPost : (flow == 2 ? kScrClass : kScrNone));
-                    if (s2 != kScrNone && (s2 == kScrSide || team == 1 || team == 2) && Side12Top(0, kP1Screens[s2]))
+                    if (s2 != kScrNone && (s2 == kScrSide || (team >= 1 && team <= 7)) && Side12Top(0, kP1Screens[s2]))
                         scr = s2;
                 }
             }
@@ -9823,7 +9955,7 @@ void Side12Frame(uintptr_t sm, long deletes)
                 // 21j-r9: his spawn point / class screen's console windows (the rest of those screens is his flow's)
                 else if (g_flowOwns && g_flow.sm == sm && g_flow.sdDeletes == deletes && g_flow.matchReady &&
                          (g_flow.screen == kScrPost || g_flow.screen == kScrClass) && g_flow.pwLook && g_flow.textsFor == g_flow.screen &&
-                         (g_flow.team == 1 || g_flow.team == 2) && Side12Top(1, kFlowScreens[g_flow.screen]))
+                         g_flow.team >= 1 && g_flow.team <= 7 && Side12Top(1, kFlowScreens[g_flow.screen]))
                 {
                     scr = g_flow.screen;
                     team = g_flow.team;
@@ -9875,13 +10007,22 @@ void Side12Frame(uintptr_t sm, long deletes)
             Side12PostFrame(f, sm, post);
         else if (scr == kScrClass)
             Side12ClassFrame(f, sm, cls);
-        else if (pick != f.shownPick)
+        else
         {
-            f.shownPick = pick;
-            ClassWheelTextGrey(f.name[0], pick != 0);
-            ClassWheelTextGrey(f.name[1], pick != 1);
-            ClassWheelModelGrey(f.model[0], pick != 0);
-            ClassWheelModelGrey(f.model[1], pick != 1);
+            // v7.3: more than two sides - his carousel (his own flow's pick, an index into his own list)
+            int teams[kP2MaxSides] = {};
+            int total = 2;
+            const int n = F34Sides(f, teams, &total);
+            if (total > 2)
+                F34SideCarousel(f, sm, teams, n, pick);
+            else if (pick != f.shownPick)
+            {
+                f.shownPick = pick;
+                ClassWheelTextGrey(f.name[0], pick != 0);
+                ClassWheelTextGrey(f.name[1], pick != 1);
+                ClassWheelModelGrey(f.model[0], pick != 0);
+                ClassWheelModelGrey(f.model[1], pick != 1);
+            }
         }
     }
 }

@@ -2747,6 +2747,26 @@ int SideNextIn(const bool* out, int n, int from, int dir)
             return i;
     return -1;
 }
+// v7.3: this match's sides for player 1's side screen: every side (Mashup: up to 7; more than two - the ones out of the
+// match left off, Ben's v7.2), count / total / team set, the pick put on `want` (else the first)
+void SideListMake(uint32_t want)
+{
+    int teams[kMaxSides] = {};
+    const int n = SideTeamsNow(teams);
+    int k = 0;
+    for (int i = 0; i < n; ++i)
+        if (n <= 2 || !SideOutNow(teams[i]))
+            g_side.team[k++] = teams[i];
+    if (k == 0) // (every side out - the round is over: all of them, greyed)
+        for (int i = 0; i < n; ++i)
+            g_side.team[k++] = teams[i];
+    g_side.count = k;
+    g_side.total = n;
+    g_side.pick = 0;
+    for (int i = 0; i < g_side.count; ++i)
+        if (static_cast<uint32_t>(g_side.team[i]) == want)
+            g_side.pick = i;
+}
 // v7.1: the carousel goes round - the next side not out from 'from' going 'dir', wrapping, else -1
 int SideNextWrap(const bool* out, int n, int from, int dir)
 {
@@ -3074,13 +3094,26 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
     const bool look34 = QuarterLook() && g_sideLookAllowed;
     if (g_side.made && g_side.look != look34)
         SideClear(look34 ? "players 3 / 4's look now" : "players 3 / 4's look not drawn - ours", sd);
+    // v7.2 / v7.3: the carousel holds only the sides still in the match - one going out while the screen is up: made again
+    // without it (this frame, the picked side kept); players 3 / 4's look too (v7.3)
+    if (g_side.made && g_side.total > 2)
+    {
+        bool gone = false;
+        for (int i = 0; i < g_side.count && !gone; ++i)
+            gone = SideOutNow(g_side.team[i]);
+        if (gone)
+        {
+            const int keep = (g_side.pick >= 0 && g_side.pick < g_side.count) ? g_side.team[g_side.pick] : 0;
+            SideClear("a side is out of the match - the carousel made again without it", sd);
+            g_side.keepTeam = keep;
+        }
+    }
     if (!g_side.made && look34)
     {
         const uint32_t shown = ReadU32(sd + kTailStart + 4 * kIdxTeamShown);
-        g_side.count = 2;
-        g_side.team[0] = 1;
-        g_side.team[1] = 2;
-        g_side.pick = shown == 2 ? 1 : 0;
+        // v7.3: every side of the match in 4-player too (split_spawn_menus.cpp draws them - its carousel for more than two)
+        SideListMake(g_side.keepTeam ? static_cast<uint32_t>(g_side.keepTeam) : shown);
+        g_side.keepTeam = 0;
         g_side.made = true;
         g_side.look = true;
         if (g_sideLookLines++ < 6)
@@ -3104,50 +3137,13 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
         if (hzModels)
             hzSize = kHzSideTall * h / kHzSoldierUnits;
     }
-    // v7.2: the carousel holds only the sides still in the match - one going out while the screen is up: made again without it
-    // (this frame, the picked side kept)
-    if (g_side.made && !g_side.look && g_side.total > 2)
-    {
-        bool gone = false;
-        for (int i = 0; i < g_side.count && !gone; ++i)
-            gone = SideOutNow(g_side.team[i]);
-        if (gone)
-        {
-            const int keep = (g_side.pick >= 0 && g_side.pick < g_side.count) ? g_side.team[g_side.pick] : 0;
-            SideClear("a side is out of the match - the carousel made again without it", sd);
-            g_side.keepTeam = keep;
-        }
-    }
     if (!g_side.made)
     {
         const uint32_t shown = ReadU32(sd + kTailStart + 4 * kIdxTeamShown);
         // v6.5: the sides (Mashup: up to 7, the 1-player side screen only)
-        g_side.count = 2;
-        g_side.total = 2;
-        g_side.team[0] = 1;
-        g_side.team[1] = 2;
-        if (!QuarterLook()) // v7.1: split screen too (4-player keeps the two stock sides)
-        {
-            int teams[kMaxSides] = {};
-            const int n = SideTeamsNow(teams);
-            // v7.2: more than two sides - the ones out of the match are not on the carousel at all (Ben: "straight up
-            // removed"); two sides stay as they were (an out one greyed)
-            int k = 0;
-            for (int i = 0; i < n; ++i)
-                if (n <= 2 || !SideOutNow(teams[i]))
-                    g_side.team[k++] = teams[i];
-            if (k == 0) // (every side out - the round is over: all of them, greyed)
-                for (int i = 0; i < n; ++i)
-                    g_side.team[k++] = teams[i];
-            g_side.count = k;
-            g_side.total = n;
-        }
-        const uint32_t want = g_side.keepTeam ? static_cast<uint32_t>(g_side.keepTeam) : shown;
+        // v7.1 / v7.2 / v7.3: every side of the match (split screen and 4-player too; more than two - the ones out left off)
+        SideListMake(g_side.keepTeam ? static_cast<uint32_t>(g_side.keepTeam) : shown);
         g_side.keepTeam = 0;
-        g_side.pick = 0;
-        for (int i = 0; i < g_side.count; ++i)
-            if (static_cast<uint32_t>(g_side.team[i]) == want)
-                g_side.pick = i;
         // v6.9: not a side that is out (his own side defeated: the first one still in)
         if (SideOutNow(g_side.team[g_side.pick]))
             for (int i = 0; i < g_side.count; ++i)
@@ -6211,12 +6207,13 @@ namespace {
 // player 2's class ring: the same soldiers as player 1's ring, in his class screen's group. 20f-r2: three of them -
 // ring 0 = player 2's, rings 1 / 2 = players 3 / 4's (split_spawn_menus.cpp's own screens in their HUD roots). 20g-r11: ring 3 =
 // player 1's in players 3 / 4's look (4-player)
-constexpr int kRings = 8;     // v7.1: 4 - 7 = players 1 - 4's side carousels (ClassWheelSideRingFrame)
+constexpr int kRings = 12;    // v7.1: 4 - 7 = players 1 - 4's side carousels (ClassWheelSideRingFrame); v7.3: 8 - 11 = theirs in
+                              // players 3 / 4's look (slots 5 - 8)
 constexpr int kSideRing0 = 4;
 
 int Ring2Player(int r)
 {
-    return r >= kSideRing0 ? r - kSideRing0 + 1 : (r == 3 ? 1 : r + 2);
+    return r >= kSideRing0 ? (r - kSideRing0) % 4 + 1 : (r == 3 ? 1 : r + 2);
 }
 struct Ring2
 {
@@ -6489,7 +6486,7 @@ bool ClassWheelSideOut(int team)
 int ClassWheelSideRingFrame(int player, uintptr_t group, const uintptr_t* classes, const bool* out, int n, int sel, float cx,
                             float cy, float width, float size, float lift, int style)
 {
-    if (player < 1 || player > 4)
+    if (player < 1 || player > 8) // v7.3: 5 - 8 = players 1 - 4 in players 3 / 4's look
         return 0;
     const int r = kSideRing0 + player - 1;
     const int placed = RingFrame2(r, group, classes, n, sel, cx, cy, width, size, lift, cx, cy, style);
@@ -6507,7 +6504,7 @@ int ClassWheelSideRingFrame(int player, uintptr_t group, const uintptr_t* classe
 }
 void ClassWheelSideRingClear(int player, bool del, const char* why)
 {
-    if (player >= 1 && player <= 4)
+    if (player >= 1 && player <= 8)
         Ring2Drop(kSideRing0 + player - 1, del, why ? why : "his side screen is not up");
 }
 
@@ -7295,6 +7292,17 @@ void ClassWheelP1LookAllow(bool on)
     if (on != g_sideLookAllowed && g_sideLookLines++ < 12)
         Log("[wheel] 20g-r11: player 1's spawn screens in players 3 / 4's look %s", on ? "allowed (4-player)" : "NOT drawn - his own as r9");
     g_sideLookAllowed = on;
+}
+
+// v7.3: player 1's side screen's sides (teams, how many; total = the match's sides) - for his side screen in players 3 / 4's look
+int ClassWheelP1Sides(int* teams, int max, int* total)
+{
+    int k = 0;
+    for (int i = 0; i < g_side.count && k < max; ++i)
+        teams[k++] = g_side.team[i];
+    if (total)
+        *total = g_side.total;
+    return k;
 }
 
 bool ClassWheelP1Look(int* screen, int* team, uintptr_t* post, int* cls, int* pick)
