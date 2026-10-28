@@ -11947,6 +11947,11 @@ const BfxOption kOwnSprintRows[] = { { "SPRINT", BFX_OPT_ONOFF, nullptr, 0, OwnS
 const BfxModOptions kOwnSprint = { BFX_API_VERSION, "BF1GAMEEXT SPRINT", 1, kOwnSprintRows };
 const BfxOption kOwnRagdollRows[] = { { "RAGDOLL EFFECTS", BFX_OPT_ONOFF, nullptr, 0, OwnRagdollGet, OwnRagdollSet, BFX_OPTF_MASTER } };
 const BfxModOptions kOwnRagdoll = { BFX_API_VERSION, "RAGDOLL EFFECTS", 1, kOwnRagdollRows };
+// v7.4 (Ben): the 1-player side carousel on / off ([ClassWheel] SideCarousel)
+int OwnCarouselGet() { return ClassWheelSideCarouselState(); }
+int OwnCarouselSet(int v) { return ClassWheelSideCarouselSet(v != 0); }
+const BfxOption kOwnCarouselRows[] = { { "SIDE CAROUSEL", BFX_OPT_ONOFF, nullptr, 0, OwnCarouselGet, OwnCarouselSet, BFX_OPTF_MASTER } };
+const BfxModOptions kOwnCarousel = { BFX_API_VERSION, "SIDE CAROUSEL", 1, kOwnCarouselRows };
 bool g_ownRegistered = false;
 
 void ModsRegisterOwn()
@@ -11958,6 +11963,7 @@ void ModsRegisterOwn()
         ModsRegister(&kOwnSprint);
     if (RagdollMenuState() >= 0)
         ModsRegister(&kOwnRagdoll);
+    ModsRegister(&kOwnCarousel); // v7.4 (its row says "not available" while the spawn screen scan has not found it)
 }
 } // namespace
 

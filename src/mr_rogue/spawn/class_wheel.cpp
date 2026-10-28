@@ -823,6 +823,8 @@ bool g_wheelStarted = false;  // 21j-r18: the scan found the spawn screen on thi
 char g_wheelIni[MAX_PATH + 32] = ""; // 21j-r18: BF1GameExt.ini (the row saves Enabled there)
 bool g_wheelSplit = true;     // 18w: [ClassWheel] Split - the flow in split screen too
 bool g_pauseLatch = true;     // 21h-r6: [ClassWheel] PauseLatch - buttons held when his flow comes back from a pause latched
+bool g_sideCarousel = true;   // v7.4: [ClassWheel] SideCarousel - 1-player CHOOSE YOUR SIDE with more than two sides as a
+                              // carousel (0: v7.0's rows, the sides out of the match greyed); split screen always has it
 bool g_mouseClicks = true;    // 21j-r19: [ClassWheel] MouseClicks - the mouse as the Classic Collection's (click what you mean)
 int g_clickLines = 0;         // 21j-r19: [wheel] mouse click lines
 constexpr DWORD kFlowGapMs = 150; // 21h-r6: a gap this long between his flow's frames = it was stopped (a pause)
@@ -2690,6 +2692,7 @@ struct Side
     LARGE_INTEGER last = {};  // v7.1: its last frame (the turn's time step)
     int total = 2;            // v7.2: the match's sides (more than two: a carousel, the sides out of the match left off it)
     int keepTeam = 0;         // v7.2: the side picked when the carousel was made again (a side went out), kept picked
+    bool car = false;         // v7.4: made as a carousel (made again when [ClassWheel] SideCarousel / the MODS row changes)
 };
 Side g_side;
 
@@ -2747,6 +2750,11 @@ int SideNextIn(const bool* out, int n, int from, int dir)
             return i;
     return -1;
 }
+// v7.4: the carousel is used (split screen always; 1 player as [ClassWheel] SideCarousel / the MODS page say)
+bool SideCarouselOn()
+{
+    return g_sideCarousel || LocalPlayersNow() >= 2;
+}
 // v7.3: this match's sides for player 1's side screen: every side (Mashup: up to 7; more than two - the ones out of the
 // match left off, Ben's v7.2), count / total / team set, the pick put on `want` (else the first)
 void SideListMake(uint32_t want)
@@ -2755,13 +2763,14 @@ void SideListMake(uint32_t want)
     const int n = SideTeamsNow(teams);
     int k = 0;
     for (int i = 0; i < n; ++i)
-        if (n <= 2 || !SideOutNow(teams[i]))
+        if (n <= 2 || !SideCarouselOn() || !SideOutNow(teams[i])) // (v7.4: rows keep the out sides, greyed)
             g_side.team[k++] = teams[i];
     if (k == 0) // (every side out - the round is over: all of them, greyed)
         for (int i = 0; i < n; ++i)
             g_side.team[k++] = teams[i];
     g_side.count = k;
     g_side.total = n;
+    g_side.car = n > 2 && SideCarouselOn(); // v7.4
     g_side.pick = 0;
     for (int i = 0; i < g_side.count; ++i)
         if (static_cast<uint32_t>(g_side.team[i]) == want)
@@ -3096,7 +3105,14 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
         SideClear(look34 ? "players 3 / 4's look now" : "players 3 / 4's look not drawn - ours", sd);
     // v7.2 / v7.3: the carousel holds only the sides still in the match - one going out while the screen is up: made again
     // without it (this frame, the picked side kept); players 3 / 4's look too (v7.3)
-    if (g_side.made && g_side.total > 2)
+    // v7.4: the MODS page's SIDE CAROUSEL row changed while it is up - made again the other way
+    if (g_side.made && !g_side.look && g_side.total > 2 && g_side.car != SideCarouselOn())
+    {
+        const int keep = (g_side.pick >= 0 && g_side.pick < g_side.count) ? g_side.team[g_side.pick] : 0;
+        SideClear("the side carousel switched on / off", sd);
+        g_side.keepTeam = keep;
+    }
+    if (g_side.made && g_side.total > 2 && SideCarouselOn())
     {
         bool gone = false;
         for (int i = 0; i < g_side.count && !gone; ++i)
@@ -3178,7 +3194,7 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
                 swprintf(name, 48, L"SIDE %d", g_side.team[i]);
             // the name under the soldier, in the text group (centre-anchored, reference units, y down)
             // v7.1: a carousel - every name where the front side's goes (only the picked one is shown)
-            const bool carName = g_side.total > 2; // v7.2: the match's sides (some may be off it)
+            const bool carName = g_side.car; // v7.2 / v7.4: a carousel (the match's sides; some may be off it)
             const float lx = carName ? (hzTexts ? 0.5f * (hzNameX[0] + hzNameX[1]) : look.textX * RefW())
                                      : (hzTexts ? hzNameX[i] : (look.textX + SideLabelOffset(i, g_side.count, look)) * RefW());
             const float ly = carName ? (hzTexts ? hzNameY : (look.labelY - 0.5f) * RefH())
@@ -3222,7 +3238,7 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
     // v6.5: more than two sides - left / right step through them
     const int was = g_side.pick;
     const int nSides = g_side.count;
-    const bool car = g_side.total > 2 && !g_side.look; // v7.1 / v7.2: the carousel (the match has more than two sides)
+    const bool car = g_side.car && !g_side.look; // v7.1 / v7.2 / v7.4: the carousel (more than two sides, [ClassWheel] SideCarousel)
     // v6.9: the sides out of the match (greyed out, skipped, not joined)
     bool out[kMaxSides] = {};
     int nOut = 0;
@@ -3245,13 +3261,13 @@ int SideUpdate(uintptr_t sd, bool left, bool right, bool a, bool mouseA)
     {
         if (left) // v7.1: round the carousel
         {
-            const int j = SideNextWrap(out, nSides, g_side.pick, -1);
+            const int j = car ? SideNextWrap(out, nSides, g_side.pick, -1) : SideNextIn(out, nSides, g_side.pick, -1); // v7.4: rows stop at the ends
             if (j >= 0)
                 g_side.pick = j;
         }
         if (right)
         {
-            const int j = SideNextWrap(out, nSides, g_side.pick, +1);
+            const int j = car ? SideNextWrap(out, nSides, g_side.pick, +1) : SideNextIn(out, nSides, g_side.pick, +1);
             if (j >= 0)
                 g_side.pick = j;
         }
@@ -7028,6 +7044,25 @@ int ClassWheelMenuSet(bool on)
     return g_wheelEnabled ? 1 : 0;
 }
 
+// v7.4: the MODS page's SIDE CAROUSEL row (1 player; split screen always has it): -1 = no spawn screen this build
+int ClassWheelSideCarouselState()
+{
+    if (!g_wheelStarted)
+        return -1;
+    return g_sideCarousel ? 1 : 0;
+}
+int ClassWheelSideCarouselSet(bool on)
+{
+    if (!g_wheelStarted)
+        return -1;
+    g_sideCarousel = on;
+    const BOOL saved = g_wheelIni[0] ? WritePrivateProfileStringA("ClassWheel", "SideCarousel", on ? "1" : "0", g_wheelIni) : FALSE;
+    Log("[wheel] %lu ms: v7.4: MODS page SIDE CAROUSEL: %s - 1-player CHOOSE YOUR SIDE with more than two sides %s; saved in "
+        "BF1GameExt.ini [ClassWheel] SideCarousel=%d%s",
+        ScanMsSinceAttach(), on ? "ON" : "OFF", on ? "is a carousel" : "in rows", on ? 1 : 0, saved ? "" : " - NOT SAVED (the write failed)");
+    return g_sideCarousel ? 1 : 0;
+}
+
 // 20g-r12: horizontal 2-player, the Classic Collection's layout (the HUD roots are split_spawn_menus.cpp's to read)
 bool ClassWheelHorizontal()
 {
@@ -7372,6 +7407,7 @@ void ClassWheelScanStart(bool onGameThread)
             g_wheelSplit = GetPrivateProfileIntA("ClassWheel", "Split", 1, ini) != 0;
             g_pauseLatch = GetPrivateProfileIntA("ClassWheel", "PauseLatch", 1, ini) != 0; // 21h-r6
             g_mouseClicks = GetPrivateProfileIntA("ClassWheel", "MouseClicks", 1, ini) != 0; // 21j-r19
+            g_sideCarousel = GetPrivateProfileIntA("ClassWheel", "SideCarousel", 1, ini) != 0; // v7.4
             // 21j-r9: the 1-player ring's place, percent of the game's soldier's x (-80 .. 80)
             {
                 int shift = static_cast<int>(GetPrivateProfileIntA("ClassWheel", "RingShift", -31, ini));
@@ -7391,6 +7427,8 @@ void ClassWheelScanStart(bool onGameThread)
         Log("[wheel] 21j-r9: [ClassWheel] RingShift=%d: the 1-player class ring's centre %.2f of the game's soldier's x from it (-0.13 "
             "before: its right-hand soldiers under the class window), \"SELECT SOLDIER\" %+.3f of the screen across", static_cast<int>(
             g_ringShift * 100.0f + (g_ringShift < 0.0f ? -0.5f : 0.5f)), g_ringShift, SelSoldierX());
+        Log("[wheel] v7.4: [ClassWheel] SideCarousel=%d: 1-player CHOOSE YOUR SIDE with more than two sides %s", g_sideCarousel ? 1 : 0,
+            g_sideCarousel ? "is a carousel (the sides out of the match left off)" : "in rows (v7.0's; the sides out greyed) - split screen keeps the carousel");
         Log("[wheel] 21h-r6: [ClassWheel] PauseLatch=%d: %s", g_pauseLatch ? 1 : 0,
             g_pauseLatch ? "back from a pause, his spawn screens take only a new press (the A / B that closed the pause is latched)"
                          : "as before (the button that closed the pause counts on his spawn screen)");

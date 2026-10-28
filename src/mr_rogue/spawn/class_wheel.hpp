@@ -210,6 +210,10 @@ void ClassWheelSideRingClear(int player, bool del, const char* why);
 // v7.3: slots 5 - 8 of ClassWheelSideRingFrame / Clear = players 1 - 4's side carousels in players 3 / 4's look (4-player).
 // Player 1's side screen's sides (teams, how many; total = the match's sides, more than two: the ones out are left off).
 int ClassWheelP1Sides(int* teams, int max, int* total);
+// v7.4: the MODS page's SIDE CAROUSEL row - [ClassWheel] SideCarousel (1-player CHOOSE YOUR SIDE with more than two sides as a
+// carousel; 0 = v7.0's rows). -1 = no spawn screen on this build. Set saves it in BF1GameExt.ini and returns the value now.
+int ClassWheelSideCarouselState();
+int ClassWheelSideCarouselSet(bool on);
 // 20f-r2 / r4: a new, empty RedScreenGroupElement (the game's new and its own constructor; not in any group or root
 // yet - its root anchor / flag are the fields AddToRoot sets), or 0 if
 // its constructor was not found at start. Delete it with ClassWheelDeleteElement (its children are only taken out of
