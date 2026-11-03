@@ -483,7 +483,7 @@ def render_bf1(job):
     if look == "ground" and job.w.boundary and max(len(b) for b in job.w.boundary) <= 6 and not job.high_outside and not job.water.any():
         # stock BF1 draws the land the level was built on: where things were placed (end1's forest island,
         # a boundary of a few points drawn loosely round it). The loose boundary and empty terrain beyond it are left out.
-        spread = job.object_spread(10.0)
+        spread = job.object_spread(8.0)
         if spread.any() and (spread & land).sum() < 0.85 * land.sum():
             land &= spread
             log("Land cut to where objects were placed (%d%% of the box)." % round(land.mean() * 100))
@@ -521,7 +521,7 @@ def render_bf1(job):
             if job.w.boundary:
                 # stock leaves out buildings beyond the play area (tat2): keep what stands mostly on the land
                 lm = land
-                layers = [l for l in layers if (cr.pmask(l[1], N) & lm).sum() >= 0.5 * max(1, cr.pmask(l[1], N).sum())]
+                layers = [l for l in layers if cr.LMask(l[1], N).sample(lm) >= 0.5 * max(1, cr.LMask(l[1], N).area)]
             for top, polys, _ in layers:
                 cr.draw_polys(img, polys, BLD, EDGE, rim_w=U)
             drawn = len(layers)
@@ -533,8 +533,8 @@ def render_bf1(job):
             # only what stands mostly inside the walls: the towers of the skyline beyond them are scenery (bespin2)
             lm = land.astype(np.uint8)
             def inside(l):
-                m = cr.pmask(l[1], N)
-                return (m & (lm > 0)).sum() >= 0.4 * max(1, m.sum())
+                m = cr.LMask(l[1], N)
+                return m.sample(lm > 0) >= 0.4 * max(1, m.area)
             layers = [l for l in cr.buildings(job, job.pieces, N) if inside(l)]
             for l in sorted(layers, key=lambda l: (not cr.is_floor(job, l), cr.is_dark(l))):
                 if cr.is_dark(l):

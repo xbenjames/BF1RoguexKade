@@ -62,7 +62,7 @@ def shape_poly(c, a, eps_px, snap_rect):
     if ra > 0 and a / ra >= snap_rect:
         return cv2.boxPoints(rect).astype(np.float32)
     (cx, cy), r = cv2.minEnclosingCircle(c)
-    if a / (np.pi * r * r + 1e-9) >= 0.88 and r > 3 * eps_px:
+    if a / (np.pi * r * r + 1e-9) >= 0.94 and r > 3 * eps_px:      # an octagon (0.90) stays an octagon
         t = np.linspace(0, 2 * np.pi, max(24, int(r)), endpoint=False)
         return np.stack([cx + r * np.cos(t), cy + r * np.sin(t)], 1).astype(np.float32)
     p = cv2.approxPolyDP(c, eps_px, True).reshape(-1, 2).astype(np.float32)
@@ -188,6 +188,42 @@ def piece_polys(job, p, eps_px, min_area_px, close_px=1, solid=True):
     return [(pp + off, [h + off for h in hh]) for pp, hh in polys]
 
 
+class LMask:
+    """a polygon mask kept only over its own bounding box (full-canvas masks for hundreds of pieces ran out of memory)"""
+    def __init__(self, polys, N, pad=2):
+        pts = np.concatenate([pp for pp, hh in polys]) if polys else np.zeros((1, 2), np.float32)
+        self.x0 = max(0, int(np.floor(pts[:, 0].min())) - pad); self.y0 = max(0, int(np.floor(pts[:, 1].min())) - pad)
+        self.x1 = min(N, int(np.ceil(pts[:, 0].max())) + pad + 1); self.y1 = min(N, int(np.ceil(pts[:, 1].max())) + pad + 1)
+        w, h = max(1, self.x1 - self.x0), max(1, self.y1 - self.y0)
+        m = np.zeros((h, w), np.uint8)
+        off = np.array([self.x0, self.y0], np.float32)
+        draw_polys(m, [(pp - off, [hh_ - off for hh_ in hh]) for pp, hh in polys], 255)
+        self.m = m > 127
+        self.area = int(self.m.sum())
+
+    def inter(self, o):
+        x0, y0, x1, y1 = max(self.x0, o.x0), max(self.y0, o.y0), min(self.x1, o.x1), min(self.y1, o.y1)
+        if x0 >= x1 or y0 >= y1:
+            return 0
+        a = self.m[y0 - self.y0:y1 - self.y0, x0 - self.x0:x1 - self.x0]
+        b = o.m[y0 - o.y0:y1 - o.y0, x0 - o.x0:x1 - o.x0]
+        return int((a & b).sum())
+
+    def sample(self, full):
+        """overlap with a full-canvas boolean mask"""
+        return int((self.m & full[self.y0:self.y1, self.x0:self.x1][:self.m.shape[0], :self.m.shape[1]]).sum())
+
+    def paint(self, full):
+        full[self.y0:self.y1, self.x0:self.x1] |= self.m
+
+
+def union_full(lms, N):
+    u = np.zeros((N, N), bool)
+    for l in lms:
+        l.paint(u)
+    return u
+
+
 def pmask(polys, N):
     m = np.zeros((N, N), np.uint8)
     draw_polys(m, polys, 255)
@@ -258,7 +294,7 @@ def buildings(job, pieces, N, min_foot=20.0):
         groups.setdefault(re.sub(r"_?\d+$", "", p["cls"].lower()), []).append((p, polys))
     layers = []
     for cls, items in groups.items():
-        ms = [pmask(polys, N) for p, polys in items]
+        ms = [LMask(polys, N) for p, polys in items]
         par = list(range(len(items)))
 
         def f(i):
@@ -268,13 +304,11 @@ def buildings(job, pieces, N, min_foot=20.0):
         if len(items) <= 60:
             for i in range(len(items)):
                 for j in range(i + 1, len(items)):
-                    inter = (ms[i] & ms[j]).sum()
-                    if inter and inter > 0.15 * min(ms[i].sum(), ms[j].sum()):
+                    inter = ms[i].inter(ms[j])
+                    if inter and inter > 0.15 * min(ms[i].area, ms[j].area):
                         par[f(i)] = f(j)
         if len(items) >= 4:
-            u = np.zeros((N, N), np.uint8)
-            for m_ in ms:
-                u |= m_.astype(np.uint8)
+            u = union_full(ms, N).astype(np.uint8)
             u = cv2.morphologyEx(u * 255, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
             cs, _ = cv2.findContours(u, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
             c = max(cs, key=cv2.contourArea) if cs else None
@@ -289,24 +323,22 @@ def buildings(job, pieces, N, min_foot=20.0):
             if len(idx) == 1:
                 layers.append((items[idx[0]][0]["top"], items[idx[0]][1], [items[idx[0]][0]]))
                 continue
-            m = np.zeros((N, N), bool)
-            for i in idx:
-                m |= ms[i]
+            m = union_full([ms[i] for i in idx], N)
             polys = simplify(m.astype(np.uint8) * 255, 0.6 / mpp, 6 / mpp ** 2)
             layers.append((max(items[i][0]["top"] for i in idx), polys, [items[i][0] for i in idx]))
     layers.sort(key=lambda l: l[0])
     # small add-ons sitting mostly on a taller building (the palace's corner bulges) are part of it: stock never shows them
-    masks = [pmask(l[1], N) for l in layers]
+    masks = [LMask(l[1], N) for l in layers]
     keep = []
     hid = {}
     for i, l in enumerate(layers):
-        a = masks[i].sum()
+        a = masks[i].area
         hidden = False
         if is_dark(l):
             keep.append(i)
             continue
         for j, l2 in enumerate(layers):
-            if j != i and masks[j].sum() > 8 * a and (masks[i] & masks[j]).sum() > 0.4 * a:
+            if j != i and masks[j].area > 8 * a and masks[i].inter(masks[j]) > 0.4 * a:
                 hidden = True
                 break
         if not hidden:
@@ -318,9 +350,7 @@ def buildings(job, pieces, N, min_foot=20.0):
         if i not in keep:
             continue
         if i in hid:
-            m = masks[i].copy()
-            for k in hid[i]:
-                m |= masks[k]
+            m = union_full([masks[i]] + [masks[k] for k in hid[i]], N)
             pts = np.argwhere(m)[:, ::-1].astype(np.float32)
             hull = cv2.convexHull(pts)
             (cx, cy), r = cv2.minEnclosingCircle(hull)
@@ -429,16 +459,13 @@ def keep_layers(job, layers, area, N, near_m=6.0):
         plaza = float(np.median([c["pos"][1] for c in job.cps]))
         r = max(1, int(round(2.0 / mpp)))
         k = np.ones((2 * r + 1,) * 2, np.uint8)
-        masks = [pmask(l[1], N) for l in layers]
+        masks = [LMask(l[1], N) for l in layers]
         for _ in range(4):
-            u = np.zeros((N, N), np.uint8)
-            for m, kp in zip(masks, keep):
-                if kp:
-                    u |= m.astype(np.uint8)
+            u = union_full([m for m, kp in zip(masks, keep) if kp], N).astype(np.uint8)
             u = cv2.dilate(u, k) > 0
             grew = False
             for i, l in enumerate(layers):
-                if not keep[i] and l[0] >= plaza + 2.0 and (masks[i] & u).any():
+                if not keep[i] and l[0] >= plaza + 2.0 and masks[i].sample(u):
                     keep[i] = grew = True
             if not grew:
                 break
