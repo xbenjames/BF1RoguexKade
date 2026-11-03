@@ -518,6 +518,24 @@ def render_bf1(job):
         base = FILL if job.high_outside else DARK      # hoth: light snow field; jungle/forest/rock maps: darker land
         img[land] = base
         step = o.contours
+        if job.high_outside and job.H is not None:
+            # stock BF1 Hoth: smooth height bands - the valley floor light, three steps up the canyon walls each a
+            # darker blue, a thin light line on each step, the high ground navy (measured on the stock tga:
+            # light below ~+6 m, then +6 / +14 / +24 m)
+            import cv2
+            H = cv2.GaussianBlur(job.H.astype(np.float32), (0, 0), 9 * U)
+            dh = H - job.play_height()
+            levels = [(6.0, [42, 97, 181]), (11.0, [34, 84, 161]), (16.0, [25, 71, 141]), (21.0, [21, 64, 131]), (26.0, NAVY)]
+            img[land] = FILL
+            for h0, col in levels:
+                img[land & (dh >= h0)] = col
+            band = np.digitize(dh, [h for h, _ in levels])
+            ed = np.zeros((N, N), bool)
+            ed[:-1, :] |= band[:-1, :] != band[1:, :]
+            ed[:, :-1] |= band[:, :-1] != band[:, 1:]
+            ed = dilate_sq(ed, max(0, round(U / 2)))
+            img[ed & land] = mix(FILL, RIM, 0.5)
+            step = 0
         if step and step > 0 and job.H is not None:
             H = box_blur(job.H, max(1, round(2 * U)))
             lev = np.floor(H / step).astype(np.int32)

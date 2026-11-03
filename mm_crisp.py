@@ -8,7 +8,7 @@ import cv2
 
 CLUTTER = re.compile(r"planter|lamp|lampost|post|tree|leaf|flower|plant|bush|shrub|grass|fern|vine|bench|chair|table|crate|barrel|"
                      r"box|sign|banner|flag|light|torch|debris|rubble|rock|stone|pebble|weed|fx|mist|cloud|sky(?!way)|dust|god|decal|"
-                     r"billboard|log|trunk|stump|fallen|turret|gun|console|terminal|panel|droid|speeder|ship|fighter|vehicle|spawn|recharge|item|holo", re.I)
+                     r"billboard|trench|collapse|falcon|millen|cable|rafter|log|trunk|stump|fallen|turret|gun|console|terminal|panel|droid|speeder|ship|fighter|vehicle|spawn|recharge|item|holo", re.I)
 
 
 DARK = re.compile(r"reflection|water|pool", re.I)     # drawn in the darker band blue (naboo2 rotunda ring)
