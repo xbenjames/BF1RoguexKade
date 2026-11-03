@@ -6,14 +6,35 @@ import numpy as np
 
 DEF_IGNORE = ("gas_cell, tur_, bush, shrub, hedge, foliage, leaf, leaves, flora, veg_, vegetation, frond, reed, vine, "
               "moss, ivy, flower, cactus, kelp, coral, plant, palm, torch, grave, fence, dust, coffin, vase, arrow, "
-              "fire_cup, crane, door, cart, egg, godray, terraincutter, cutter, sarlacc, skeleton, turret, _col, wings, "
+              "fire_cup, crane, door, cart, egg, godray, terraincutter, cutter, sarlacc, skeleton, turret, _col_, wings, "
               "snd_, sound, light, effect, item, recharge, spawn, flag, decal, grass, fern, weed, debris, sky_, "
-              "cloud, controlzone, controlpanel, commandpost, holo, mist, fog, smoke, steam, spray, splash, star, lava, water, ocean, sea_")
+              "cloud, controlzone, controlpanel, commandpost, holo, mist, fog, smoke, steam, spray, splash, star, water, ocean, sea_")
 DEF_ROCK = "boulder, rock, spire, cliff, tree, log, stump, canopy, statue, stonegiant, stonehead, asteroid, mountain"
 SKIP_LABELS = {"commandpost", "vehiclespawn", "powerupstation", "powerupitem", "soldier", "hover", "walker", "flyer",
                "door", "armedbuilding", "animatedprop", "beacon", "sound", "light", "effect", "claimable"}
 OTHER_MODE = re.compile(r"ctf|1flag|2flag|flag_|hunt|rush|assault|elim|_eli|tdm|hero|_xl|space|campaign|tutorial|_h\.", re.I)
 NOT_PLAY_LAYER = re.compile(r"sound|rain|rumble|shadow|reflect|death|light", re.I)
+
+
+# what a layer's name says about the objects in it (the mappers sorted them themselves)
+LAYER_OUT = re.compile(r"sound|light|shadow|reflect|death|rumble|collision|invis|design|effect|_fx|mist|cloud|sky|prop|droid|vehicle|turret|spawn", re.I)
+LAYER_ROCK = re.compile(r"tree|rock|rubble|foliage|plant|jungle|forest|cliff|mountain|bush|grass|roid", re.I)
+LAYER_BLDG = re.compile(r"build|bldg|platform|temple|pen|object|structure|base|wall|bridge|walk", re.I)
+
+
+def layer_hint(layer_key):
+    """'out' / 'rock' / 'struct' / None from a .lyr file name"""
+    if not layer_key or layer_key == "__base":
+        return None
+    n = re.sub(r"\.lyr$", "", os.path.basename(layer_key), flags=re.I)
+    n = n.split("_", 1)[1] if "_" in n else n          # drop the world prefix (myg1_Rubble -> Rubble)
+    if LAYER_BLDG.search(n):
+        return "struct"
+    if LAYER_ROCK.search(n):
+        return "rock"
+    if LAYER_OUT.search(n):
+        return "out"
+    return None
 
 
 def kwlist(s):
@@ -64,9 +85,10 @@ def parse_objects(s, layer):
             continue
         rot = re.search(r"ChildRotation\(([^)]*)\)", b)
         tm = re.search(r"Team\((-?\d+)\)", b)
+        cap = re.search(r'CaptureRegion\("([^"]*)"\)', b)
         out.append(dict(name=m.group(1), cls=m.group(2), pos=[float(v) for v in pos.group(1).split(",")],
                         rot=[float(v) for v in rot.group(1).split(",")] if rot else [1, 0, 0, 0],
-                        team=int(tm.group(1)) if tm else 0, layer=layer))
+                        team=int(tm.group(1)) if tm else 0, layer=layer, capture=cap.group(1) if cap else ""))
     return out
 
 
@@ -400,7 +422,7 @@ class World:
         r = self.odf(cls)
         if r and r["label"] in SKIP_LABELS:
             return "out"
-        if any(k in c for k in ign):
+        if any(k in c for k in ign) or c.endswith("_col"):
             return "out"
         if any(k in c for k in rock):
             return "rock"

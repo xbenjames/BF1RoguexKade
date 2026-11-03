@@ -13,6 +13,7 @@ def cli(argv):
     ap.add_argument("--world"); ap.add_argument("--folders", required=True)
     ap.add_argument("--style", default="auto"); ap.add_argument("--game", default="auto")
     ap.add_argument("--out", required=True); ap.add_argument("--size", type=int)
+    ap.add_argument("--cp-rings", action="store_true"); ap.add_argument("--bf1-look", default="auto")
     a = ap.parse_args(argv)
     ix = mc.FileIndex()
     for d in a.folders.split(";"):
@@ -20,7 +21,7 @@ def cli(argv):
     ws = [p for p in ix.worlds() if not a.world or os.path.basename(p).lower() == a.world.lower() + ".wld"]
     for wp in ws:
         w = mc.World(ix, wp)
-        img, job = mr.render(w, mr.Options(style=a.style, game=a.game, size=a.size))
+        img, job = mr.render(w, mr.Options(style=a.style, game=a.game, size=a.size, cp_rings=a.cp_rings, bf1_look=a.bf1_look))
         print(mr.save_outputs(img, job, a.out))
 
 

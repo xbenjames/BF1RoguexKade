@@ -101,6 +101,11 @@ class App(tk.Tk):
         ttk.Label(g, text="BF2 turn 180°").grid(row=4, column=0, sticky="w")
         self.rot_cb = ttk.Combobox(g, state="readonly", width=16, values=["Auto (from lua)", "Yes", "No"])
         self.rot_cb.current(0); self.rot_cb.grid(row=4, column=1, sticky="w", pady=2)
+        ttk.Label(g, text="BF1 look").grid(row=5, column=0, sticky="w")
+        self.look_cb = ttk.Combobox(g, state="readonly", width=20, values=["Auto", "Floating (Kamino/Bespin)", "Town (Bespin2/Naboo2)", "Open ground (Geonosis/Tatooine)", "Ground (Hoth/Yavin)"])
+        self.look_cb.current(0); self.look_cb.grid(row=5, column=1, sticky="w", pady=2)
+        self.rings_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(g, text="CP capture rings", variable=self.rings_var).grid(row=5, column=2, columnspan=2, sticky="w")
         ttk.Label(g, text="Smallest m²").grid(row=4, column=2, sticky="e")
         self.minarea = tk.StringVar(value="25")
         ttk.Entry(g, textvariable=self.minarea, width=8).grid(row=4, column=3, sticky="w", padx=4)
@@ -295,6 +300,8 @@ class App(tk.Tk):
         o.contours = {"10 m": 10, "5 m": 5, "20 m": 20, "Off": 0}[self.cont_cb.get()]
         o.size = None if self.size_cb.get() == "Auto" else int(self.size_cb.get())
         o.rotate180 = ["auto", "yes", "no"][self.rot_cb.current()]
+        o.bf1_look = ["auto", "floating", "town", "open", "ground"][self.look_cb.current()]
+        o.cp_rings = self.rings_var.get()
         try:
             o.min_area = float(self.minarea.get())
         except ValueError:

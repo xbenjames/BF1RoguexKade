@@ -30,13 +30,13 @@ def morph(m, r, grow):
 def erode_sq(m, r):
     if r <= 0:
         return m.astype(bool)
-    return ndi.binary_erosion(m.astype(bool), np.ones((2 * r + 1, 2 * r + 1), bool), border_value=0)
+    return ndi.minimum_filter(m.astype(np.uint8), size=2 * r + 1, mode="constant", cval=0).astype(bool)
 
 
 def dilate_sq(m, r):
     if r <= 0:
         return m.astype(bool)
-    return ndi.binary_dilation(m.astype(bool), np.ones((2 * r + 1, 2 * r + 1), bool))
+    return ndi.maximum_filter(m.astype(np.uint8), size=2 * r + 1, mode="constant", cval=0).astype(bool)
 
 
 def drop_small(m, min_pix, val):
@@ -117,6 +117,8 @@ class Options:
         self.min_area = 25.0
         self.box = None              # (E, CX, CZ) override
         self.rotate180 = "auto"      # auto | yes | no  (BF2 SetMapNorthAngle(180))
+        self.bf1_look = "auto"       # auto | floating | town | open | ground
+        self.cp_rings = False        # draw each CP's capture region (stock BF2 geo1 does)
         self.__dict__.update(kw)
 
 
@@ -160,6 +162,22 @@ class Job:
         if opt.cp_off is None:
             opt.cp_off = {cp_key(c) for c in self.all_cps if mc.OTHER_MODE.search(c["name"]) or mc.OTHER_MODE.search(c["cls"])}
         self.cps = [c for c in self.all_cps if cp_key(c) not in opt.cp_off]
+        self.high_outside = False
+
+    def object_mode(self, ob):
+        """user's choice for the class > what the layer says > what the class name / ODF says"""
+        c = ob["cls"].lower()
+        if c in self.o.class_modes:
+            return self.o.class_modes[c]
+        base = self.w.class_mode(ob["cls"])
+        if base == "out" and (self.w.odf(ob["cls"]) or {}).get("label") in mc.SKIP_LABELS:
+            return "out"                        # CPs, doors, spawns, soldiers stay out whatever layer they're in
+        hint = mc.layer_hint(ob["layer"])
+        if hint == "struct" and base == "out" and not re.search(r"tree|bush|plant|leaf|grass|fern|flower|vine|mist|light|bamboo|weed", c):
+            return "struct"
+        if hint in ("rock", "out") and base == "struct":
+            return hint
+        return base
 
     def class_mode(self, cls):
         return self.o.class_modes.get(cls.lower()) or self.w.class_mode(cls)
@@ -227,7 +245,7 @@ class Job:
                 allc += 1
                 if abs(ob["pos"][1] - float(self.ter.sample(ob["pos"][0], ob["pos"][2]))) < 2.5:
                     near += 1
-            mode = self.class_mode(ob["cls"])
+            mode = self.object_mode(ob)
             if mode == "out":
                 continue
             tri, geo = w.object_tris(ob)
@@ -239,6 +257,10 @@ class Job:
             x0, x1 = tri[..., 0].min(), tri[..., 0].max()
             z0, z1 = tri[..., 2].min(), tri[..., 2].max()
             if (x1 - x0) * (z1 - z0) < o.min_area:
+                continue
+            if (x1 - x0) * (z1 - z0) > 0.5 * (2 * E) ** 2 and len(self.objs) > 5:
+                # a whole-world shell (mus1 lava fields, skyboxes): stock never draws these
+                log("Left out %s: it covers most of the map (world shell / backdrop)." % ob["cls"])
                 continue
             item = dict(tri=tri, px=self.to_px(tri[..., 0], tri[..., 2]), top=float(tri[..., 1].max()),
                         ymin=float(tri[..., 1].min()), cls=ob["cls"], pos=ob["pos"])
@@ -293,9 +315,23 @@ class Job:
                 # BF1 hoth: the canyon walls outside the boundary are drawn too (as darker high ground);
                 # BF1 end1: flat forest outside the boundary is not. Tell them apart by how high the outside is.
                 out_h = float(np.median(self.H[~land])) - self.play_height()
-                if out_h > 15:
+                if out_h > 29:
                     land[:] = True
+                    self.high_outside = True
                     log("The ground outside the boundary is high (%.0f m up): drawn as high ground, like stock BF1 Hoth." % out_h)
+        elif self.H is not None and np.percentile(self.H, 95) - np.percentile(self.H, 5) > 40 and self.cps:
+            # mountain maps without a boundary (BF1 RhenVar): the land is the plateau the CPs stand on
+            band = np.abs(box_blur(self.H, max(1, round(2 * U))) - self.play_height()) < 12
+            band = morph(morph(band, round(3 * U), False), round(3 * U), True)
+            lab, n = ndi.label(band)
+            keep = set()
+            for c in self.cps:
+                q = self.to_px(c["pos"][0], c["pos"][2]).astype(int)
+                if 0 <= q[0] < N and 0 <= q[1] < N and lab[q[1], q[0]]:
+                    keep.add(lab[q[1], q[0]])
+            land = np.isin(lab, list(keep)) if keep else band
+            land = drop_small(land, (30 * U) ** 2, 0)
+            log("No boundary; land = the plateau around the CPs (within 12 m of their height).")
         elif self.H is not None:
             lo = self.H.min()
             land = box_blur((self.H > lo + 2).astype(np.float32), max(1, round(U))) > 0.5
@@ -320,95 +356,186 @@ class Job:
 
 
 # ---------------------------------------------------------------- BF1 style
+def glow_bg(N):
+    """BF1 open-ground background (geo1, tat1, kashyyyk1, naboo1): a soft blue glow, no scanlines"""
+    u = (np.arange(N) + 0.5) / N - 0.5
+    r = np.hypot(u[None, :], u[:, None]) / 0.7071
+    t = np.clip(r / 0.85, 0, 1)[..., None] ** 0.9
+    c0, c1 = np.array([38, 98, 182], np.float32), np.array([11, 40, 86], np.float32)
+    return c0 * (1 - t) + c1 * t
+
+
+def badges(job, img, pieces, U, clip=None):
+    """BF1 floating-map pieces (Kamino / Bespin): light rim, blue band, navy middle; thin pieces as light bars.
+    Painted lowest first so decks sit on their bridges."""
+    N = job.N
+    NAVY = [17, 58, 121]
+    KRIM, KBAND, KLINE, KLIGHT = [129, 170, 236], [34, 84, 161], [75, 122, 198], [91, 139, 217]
+    band, thin = round(6 * U), round(3 * U)
+    rim, line = max(1, round(U)), max(1, round(U * 0.8))
+    drawn = 0
+    for p in sorted(pieces, key=lambda p: p["top"]):
+        px = p["px"]
+        x0 = int(np.floor(px[..., 0].min() - band - 6)); y0 = int(np.floor(px[..., 1].min() - band - 6))
+        x1 = int(np.ceil(px[..., 0].max() + band + 6)); y1 = int(np.ceil(px[..., 1].max() + band + 6))
+        w_, h_ = x1 - x0, y1 - y0
+        if w_ <= 0 or h_ <= 0 or x1 < 0 or y1 < 0 or x0 > N or y0 > N:
+            continue
+        im = Image.new("L", (w_, h_), 0)
+        m = np.asarray(fill_tris(0, px - np.array([x0, y0]), img=im)) > 127
+        m = morph(morph(m, round(U), True), round(U), False)
+        m = morph(morph(m, round(U * 0.5), False), round(U * 0.5), True)
+        m = drop_small(m, (3 * U) ** 2, 1); m = drop_small(m, (6 * U) ** 2, 0)
+        m = smooth_mask(m, max(1, round(U * 0.6)))
+        if m.sum() < (3 * U) ** 2:
+            continue
+        r1 = morph(m, rim, False); core = morph(m, band, False)
+        is_thin = not morph(m, thin, False).any()
+        core2 = morph(core, line, False) if core.any() else core
+        col = np.zeros((h_, w_, 3), np.float32)
+        col[:] = NAVY
+        col[~core2] = KLINE
+        col[~core] = KBAND
+        if is_thin:
+            col[:] = KLIGHT
+        col[~r1] = KRIM
+        ys, xs = np.nonzero(m)
+        Y, X = ys + y0, xs + x0
+        ok = (X >= 0) & (X < N) & (Y >= 0) & (Y < N)
+        if clip is not None:
+            ok[ok] &= clip[Y[ok], X[ok]]
+        img[Y[ok], X[ok]] = col[ys[ok], xs[ok]]
+        drawn += 1
+    return drawn
+
+
 def render_bf1(job):
+    """Stock BF1 has four looks, picked here the way the stock maps use them:
+       floating  - no ground (bes1, kamino1): every piece a badge on the scanlines
+       town      - buildings cover the play area (bespin2, naboo2, tat2): scanlines, the walled area dark navy, buildings as badges
+       open      - wide open ground, few buildings (geo1, tat1, naboo1, kashyyyk1): blue glow instead of scanlines,
+                   no land fill (except a coastline), objects as badges
+       ground    - (hoth, end1, yavin1, RhenVar): scanlines, the play land filled, height lines, buildings merged and light"""
     o, log = job.o, job.log
     OUT = o.size or 1024
     SS = 2
     N = OUT * SS
     U = N / 512.0
     job.prepare(N)
-    bg = Image.open(res_path("bf1_bg.png")).convert("RGB").resize((N, N), Image.NEAREST)
-    img = np.asarray(bg).astype(np.float32).copy()
-    FILL, RIM, LINE, NAVY, ROCK, EDGE = [50, 110, 201], [137, 178, 242], [91, 139, 217], [17, 58, 121], [36, 84, 160], [166, 200, 255]
+    FILL, RIM, NAVY, EDGE = [50, 110, 201], [137, 178, 242], [17, 58, 121], [166, 200, 255]
+    DARK, DARKRIM, BLD = [25, 71, 141], [77, 124, 199], [89, 156, 255]
+    look = "floating"
     land = np.zeros((N, N), bool)
     if job.ground == "on":
         land = job.land_mask(U)
-        img[land] = FILL
+        big = [p for p in job.pieces if walk_area(p) >= 150]
+        foot = np.asarray(fill_tris(N, np.concatenate([p["px"] for p in big]))) > 127 if big else np.zeros((N, N), bool)
+        cover = (foot & land).sum() / max(1, land.sum())
+        if o.bf1_look and o.bf1_look != "auto":
+            look = o.bf1_look
+        elif land.mean() < 0.02:
+            look = "floating"          # no usable ground under the buildings (myg1, tan1, uta1 interiors)
+        elif cover >= 0.3:
+            look = "town"
+        elif (land.mean() >= 0.65 or (job.water.any() and land.mean() >= 0.45)) and cover < 0.15 and not job.high_outside:
+            look = "open"
+        else:
+            look = "ground"
+        log("BF1 look: %s (land %d%% of the box, buildings cover %d%% of it)" % (look, round(land.mean() * 100), round(cover * 100)))
+    if look == "open":
+        img = glow_bg(N)
+    else:
+        bg = Image.open(res_path("bf1_bg.png")).convert("RGB").resize((N, N), Image.NEAREST)
+        img = np.asarray(bg).astype(np.float32).copy()
+    drawn = 0
+    if look == "ground":
+        base = FILL if job.high_outside else DARK      # hoth: light snow field; jungle/forest/rock maps: darker land
+        img[land] = base
         step = o.contours
         if step and step > 0 and job.H is not None:
             H = box_blur(job.H, max(1, round(2 * U)))
             lev = np.floor(H / step).astype(np.int32)
             playH = job.play_height()
-            DEEP = [17, 58, 121]
-            HIGH = [25, 71, 141]
+            HIGH = [25, 71, 141] if job.high_outside else NAVY
             hm = land & (H > playH + 20)
             hm = morph(hm, round(2 * U), False); hm = morph(hm, round(2 * U), True)
             hm = drop_small(hm, (10 * U) ** 2, 1)
-            band = np.floor(np.abs(H - playH) / step)
-            sel = land & ~hm & (band > 0)
-            t = np.minimum(0.3, band * 0.1)[sel][:, None]
-            img[sel] = np.array(FILL, np.float32) * (1 - t) + np.array(DEEP, np.float32) * t
+            bandv = np.floor(np.abs(H - playH) / step)
+            sel = land & ~hm & (bandv > 0)
+            t = np.minimum(0.3, bandv * 0.1)[sel][:, None]
+            img[sel] = np.array(base, np.float32) * (1 - t) + np.array(NAVY, np.float32) * t
             img[land & hm] = HIGH
             hin = morph(hm, max(1, round(U)), False)
-            img[hm & ~hin & land] = mix(FILL, RIM, 0.6)
+            img[hm & ~hin & land] = mix(base, RIM, 0.6)
             ed = np.zeros((N, N), bool)
             ed[:-1, :-1] = (lev[:-1, :-1] != lev[:-1, 1:]) | (lev[:-1, :-1] != lev[1:, :-1])
             ed = dilate_sq(ed, max(0, round(U / 2) - 1))
-            img[ed & land & ~hm] = mix(FILL, RIM, 0.55)
-    DARK, DARKRIM, BLD = [25, 71, 141], [77, 124, 199], [89, 156, 255]
-    if job.rocks:
-        m = np.asarray(fill_tris(N, np.concatenate([r["px"] for r in job.rocks]))) > 127
-        m = clean(m, round(3 * U), round(1.5 * U), (8 * U) ** 2, (10 * U) ** 2, U)
-        inner = erode_sq(m, max(1, round(U * 0.8)))
-        sel = m if job.ground != "on" else (m & land)
-        img[sel & inner] = DARK
-        img[sel & ~inner] = DARKRIM
-    drawn = 0
-    if job.pieces and job.ground == "on":
-        m = np.asarray(fill_tris(N, np.concatenate([p["px"] for p in job.pieces]))) > 127
-        m = clean(m, round(2 * U), round(U), (5 * U) ** 2, (8 * U) ** 2, U * 0.75)
-        inner = erode_sq(m, max(1, round(U)))
-        img[m & inner] = BLD
-        img[m & ~inner] = EDGE
-        drawn = len(job.pieces)
-    elif job.pieces:
-        KRIM, KBAND, KLINE, KLIGHT = [129, 170, 236], [34, 84, 161], [75, 122, 198], [91, 139, 217]
-        band, thin = round(6 * U), round(3 * U)
-        rim, line = max(1, round(U)), max(1, round(U * 0.8))
-        for p in sorted(job.pieces, key=lambda p: p["top"]):
-            px = p["px"]
-            x0 = int(np.floor(px[..., 0].min() - band - 6)); y0 = int(np.floor(px[..., 1].min() - band - 6))
-            x1 = int(np.ceil(px[..., 0].max() + band + 6)); y1 = int(np.ceil(px[..., 1].max() + band + 6))
-            w_, h_ = x1 - x0, y1 - y0
-            if w_ <= 0 or h_ <= 0 or x1 < 0 or y1 < 0 or x0 > N or y0 > N:
-                continue
-            sh = px - np.array([x0, y0])
-            im = Image.new("L", (w_, h_), 0)
-            m = np.asarray(fill_tris(0, sh, img=im)) > 127
-            m = morph(morph(m, round(U), True), round(U), False)
-            m = morph(morph(m, round(U * 0.5), False), round(U * 0.5), True)
-            m = drop_small(m, (3 * U) ** 2, 1); m = drop_small(m, (6 * U) ** 2, 0)
-            m = smooth_mask(m, max(1, round(U * 0.6)))
-            if m.sum() < (3 * U) ** 2:
-                continue
-            r1 = morph(m, rim, False); core = morph(m, band, False)
-            is_thin = not morph(m, thin, False).any()
-            core2 = morph(core, line, False) if core.any() else core
-            col = np.zeros((h_, w_, 3), np.float32)
-            col[:] = NAVY
-            col[~core2] = KLINE
-            col[~core] = KBAND
-            if is_thin:
-                col[:] = KLIGHT
-            col[~r1] = KRIM
-            ys, xs = np.nonzero(m)
-            Y, X = ys + y0, xs + x0
-            ok = (X >= 0) & (X < N) & (Y >= 0) & (Y < N)
-            img[Y[ok], X[ok]] = col[ys[ok], xs[ok]]
-            drawn += 1
-    if job.ground == "on":
-        inner = erode_sq(land, max(1, round(U)))
-        img[land & ~inner] = EDGE
+            img[ed & land & ~hm] = mix(base, RIM, 0.45)
+        if job.rocks:
+            m = np.asarray(fill_tris(N, np.concatenate([r["px"] for r in job.rocks]))) > 127
+            m = clean(m, round(3 * U), round(1.5 * U), (8 * U) ** 2, (10 * U) ** 2, U)
+            inner = erode_sq(m, max(1, round(U * 0.8)))
+            img[m & land & inner] = NAVY
+            img[m & land & ~inner] = DARKRIM
+        if job.pieces:
+            m = np.asarray(fill_tris(N, np.concatenate([p["px"] for p in job.pieces]))) > 127
+            if job.w.boundary:
+                m &= dilate_sq(land, round(4 * U))      # stock leaves out buildings beyond the play area (tat2)
+            m = clean(m, round(2 * U), round(U), (5 * U) ** 2, (8 * U) ** 2, U * 0.75)
+            inner = erode_sq(m, max(1, round(U)))
+            img[m & inner] = BLD
+            img[m & ~inner] = EDGE
+            drawn = len(job.pieces)
+        img[land & ~erode_sq(land, max(1, round(U)))] = EDGE
+    elif look == "town":
+        if job.w.boundary:
+            img[land] = NAVY
+            img[land & ~erode_sq(land, max(1, round(U)))] = EDGE
+            clip = dilate_sq(land, round(8 * U))
+            drawn = badges(job, img, job.pieces, U, clip)
+        else:
+            # no walls (naboo2): the town area (buildings + the plazas they enclose, near the CPs) dark navy,
+            # the buildings on it light with a pale rim
+            top, foot = floor_raster(job, N)
+            r = max(2, round(12.0 / (2 * job.E / N)))
+            area = morph(morph(foot, r, True), r, False)
+            area = ndi.binary_fill_holes(area)
+            hull = Image.new("L", (N, N), 0)
+            q = [tuple(job.to_px(c["pos"][0], c["pos"][2])) for c in job.cps]
+            if len(q) >= 3:
+                from math import atan2
+                cx_, cy_ = np.mean([v[0] for v in q]), np.mean([v[1] for v in q])
+                q.sort(key=lambda v: atan2(v[1] - cy_, v[0] - cx_))
+                ImageDraw.Draw(hull).polygon(q, fill=255)
+                near = dilate_sq(np.asarray(hull) > 0, max(2, round(45.0 / (2 * job.E / N))))
+                area &= near
+            area = clean(area, round(2 * U), round(2 * U), (20 * U) ** 2, (20 * U) ** 2, U)
+            img[area] = NAVY
+            img[area & ~erode_sq(area, max(1, round(U)))] = EDGE
+            m = clean(foot & dilate_sq(area, round(2 * U)), round(U), round(U), (4 * U) ** 2, (6 * U) ** 2, 0.75 * U)
+            inner = erode_sq(m, max(1, round(U)))
+            img[m] = FILL
+            img[m & ~inner] = EDGE
+            drawn = len(job.pieces)
+    elif look == "open":
+        if job.water.any():
+            img[land] = FILL
+            img[land & ~erode_sq(land, max(1, round(U)))] = EDGE
+        if job.rocks:
+            m = np.asarray(fill_tris(N, np.concatenate([r["px"] for r in job.rocks]))) > 127
+            m = clean(m, round(3 * U), round(1.5 * U), (8 * U) ** 2, (10 * U) ** 2, U)
+            inner = erode_sq(m, max(1, round(U * 0.8)))
+            img[m & inner] = NAVY
+            img[m & ~inner] = RIM
+        drawn = badges(job, img, [p for p in job.pieces if walk_area(p) >= 40], U)
+    else:  # floating
+        if job.rocks:
+            m = np.asarray(fill_tris(N, np.concatenate([r["px"] for r in job.rocks]))) > 127
+            m = clean(m, round(3 * U), round(1.5 * U), (8 * U) ** 2, (10 * U) ** 2, U)
+            inner = erode_sq(m, max(1, round(U * 0.8)))
+            img[m & inner] = DARK
+            img[m & ~inner] = DARKRIM
+        drawn = badges(job, img, job.pieces, U)
     small = img.reshape(OUT, SS, OUT, SS, 3).mean((1, 3))
     out = Image.fromarray(np.clip(small + 0.5, 0, 255).astype(np.uint8))
     ring = Image.open(res_path("bf1_ring.png")).convert("RGBA").resize((OUT, OUT), Image.BICUBIC)
@@ -492,6 +619,41 @@ def walk_area(p):
     return p["walk"]
 
 
+def cp_ring_mask(job, U):
+    """(fill, ring) masks of every CP's capture region, from the CaptureRegion named on the CP in the .lyr"""
+    N = job.N
+    fill = np.zeros((N, N), bool)
+    regs = {g["name"].lower(): g for g in job.w.regions}
+    yy, xx = np.mgrid[0:N, 0:N]
+    for c in job.cps:
+        g = regs.get((c.get("capture") or "").lower())
+        rad = max(g["size"][0], g["size"][2]) if g else 8.0
+        cx, cz = (g["pos"][0], g["pos"][2]) if g else (c["pos"][0], c["pos"][2])
+        p = job.to_px(cx, cz)
+        rp = rad / (2 * job.E) * N
+        fill |= (xx - p[0]) ** 2 + (yy - p[1]) ** 2 <= rp * rp
+    ring = fill & ~erode_sq(fill, max(1, round(0.8 * U)))
+    return fill & ~ring, ring
+
+
+def town_area(job, foot):
+    """the town: buildings plus the plazas they enclose, kept near the CPs"""
+    N = job.N
+    r = max(2, round(12.0 / (2 * job.E / N)))
+    area = morph(morph(foot, r, True), r, False)
+    area = ndi.binary_fill_holes(area)
+    q = [tuple(job.to_px(c["pos"][0], c["pos"][2])) for c in job.cps]
+    if len(q) >= 3:
+        from math import atan2
+        cx_, cy_ = np.mean([v[0] for v in q]), np.mean([v[1] for v in q])
+        q.sort(key=lambda v: atan2(v[1] - cy_, v[0] - cx_))
+        hull = Image.new("L", (N, N), 0)
+        ImageDraw.Draw(hull).polygon(q, fill=255)
+        area &= dilate_sq(np.asarray(hull) > 0, max(2, round(45.0 / (2 * job.E / N))))
+    U = N / 512.0
+    return clean(area, round(2 * U), round(2 * U), (20 * U) ** 2, (20 * U) ** 2, U)
+
+
 def render_bf2(job):
     o, log = job.o, job.log
     OUT = o.size or 512
@@ -543,7 +705,15 @@ def render_bf2(job):
     # buildings as floor plans: few flat tones (stock maps use 1-3 greys per map, not a height ramp)
     top, foot = floor_raster(job, N)
     has = ~np.isnan(top)
-    has &= top < playH + 14            # roofs / decks far above the fighting level are left off (kamino, naboo2)
+    cy = [c["pos"][1] for c in job.cps] or [playH]
+    has &= top < max(cy) + 14          # roofs / decks far above every CP are left off (naboo2 roofs, kamino pod tops)
+    has &= top > min(cy) - 18          # and ground far below every CP (cor1 under-city)
+    if outdoor and job.w.boundary:
+        has &= dilate_sq(land, round(4 * U))   # buildings beyond the play area are left off (tat2)
+    if not outdoor and not job.w.boundary and job.cps and job.pieces:
+        # town with no walls (naboo2): the plazas between the buildings drawn as a darker area, like stock
+        area = town_area(job, foot)
+        img[area] = 70
     if has.any():
         rel = np.where(has, top - playH, 0.0)
         tone = np.select([rel < -9, rel < -3, rel <= 3, rel <= 9], [105, 128, 150, 178], 200).astype(np.float32)
@@ -569,6 +739,10 @@ def render_bf2(job):
     if outdoor:
         rim = land & ~erode_sq(land, max(1, round(0.8 * U)))
         img[rim] = np.maximum(img[rim], 180)
+    if o.cp_rings:
+        rings = cp_ring_mask(job, U)
+        img[rings[0]] = 30
+        img[rings[1]] = 215
     small = img.reshape(OUT, SS, OUT, SS).mean((1, 3))
     g8 = np.clip(small + 0.5, 0, 255).astype(np.uint8)
     log("%d structures drawn as floor plans." % len(job.pieces))
