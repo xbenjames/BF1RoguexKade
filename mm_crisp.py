@@ -238,9 +238,21 @@ def buildings(job, pieces, N, min_foot=20.0):
             for i in idx:
                 m |= ms[i]
             polys = simplify(m.astype(np.uint8) * 255, 0.6 / mpp, 6 / mpp ** 2)
-            layers.append((max(items[i][0]["top"] for i in idx), [(pp, []) for pp, hh in polys], [items[i][0] for i in idx]))
+            layers.append((max(items[i][0]["top"] for i in idx), polys, [items[i][0] for i in idx]))
     layers.sort(key=lambda l: l[0])
-    return layers
+    # small add-ons sitting mostly on a taller building (the palace's corner bulges) are part of it: stock never shows them
+    masks = [pmask(l[1], N) for l in layers]
+    keep = []
+    for i, l in enumerate(layers):
+        a = masks[i].sum()
+        hidden = False
+        for j, l2 in enumerate(layers):
+            if j != i and masks[j].sum() > 8 * a and (masks[i] & masks[j]).sum() > 0.4 * a:
+                hidden = True
+                break
+        if not hidden:
+            keep.append(l)
+    return keep
 
 
 def town(job, layers, N, close_m=14.0):
@@ -258,9 +270,38 @@ def town(job, layers, N, close_m=14.0):
     area = cv2.morphologyEx(area, cv2.MORPH_OPEN, k10)
     if job.H is not None and job.cps:
         lo = min(c["pos"][1] for c in job.cps) - 5
-        area[(job.H < lo) & (union == 0)] = 0
+        pit = ((job.H < lo) & (union == 0)).astype(np.uint8) * 255
+        pit = cv2.morphologyEx(pit, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+        r = max(1, int(8 / mpp))
+        area[cv2.dilate(pit, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1,) * 2)) > 0] = 0
         area = cv2.morphologyEx(area, cv2.MORPH_OPEN, k10)
-    return area, simplify(area, 1.5 / mpp, 400 / mpp ** 2, snap_rect=0.97)
+        n, lab = cv2.connectedComponents(area)
+        keep = {lab[int(s_[1]), int(s_[0])] for s_ in seeds if 0 <= s_[0] < N and 0 <= s_[1] < N} - {0}
+        if keep:
+            area = np.isin(lab, list(keep)).astype(np.uint8) * 255
+    k20 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (max(3, int(16 / mpp)) | 1,) * 2)
+    area = cv2.morphologyEx(area, cv2.MORPH_CLOSE, k20)
+    polys = simplify(area, 3.0 / mpp, 400 / mpp ** 2, snap_rect=0.97)
+    area = pmask(polys, N).astype(np.uint8) * 255
+    return area, polys
+
+
+def near_pieces(job, pieces, area, N, near_m=6.0):
+    """pieces on or beside the play area; pieces well below the CPs and off the area (canal walls) left out"""
+    mpp = 2 * job.E / N
+    r = int(near_m / mpp)
+    near = cv2.dilate(area, np.ones((2 * r + 1,) * 2, np.uint8))
+    lo = min(c["pos"][1] for c in job.cps) - 5 if job.cps else -1e9
+    out = []
+    for p in pieces:
+        c = p["px"].reshape(-1, 2).mean(0).astype(int).clip(0, N - 1)
+        pts = p["px"].reshape(-1, 2).astype(int).clip(0, N - 1)
+        if not near[pts[:, 1], pts[:, 0]].any():
+            continue
+        if p["top"] < lo and not area[c[1], c[0]]:
+            continue
+        out.append(p)
+    return out
 
 
 def keep_near(job, layers, area, N, near_m=6.0):

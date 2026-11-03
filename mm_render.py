@@ -501,7 +501,7 @@ def render_bf1(job):
             layers = cr.buildings(job, job.pieces, N)
             area, apoly = cr.town(job, layers, N)
             cr.draw_polys(img, apoly, NAVY, RIM, rim_w=U)
-            layers = cr.keep_near(job, layers, area, N)
+            layers = cr.buildings(job, cr.near_pieces(job, job.pieces, area, N), N)
             for top, polys, _ in layers:
                 cr.draw_polys(img, polys, FILL, RIM, rim_w=U)
             drawn = len(layers)
