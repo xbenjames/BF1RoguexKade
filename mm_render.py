@@ -590,7 +590,7 @@ def render_bf1(job):
             def inside(l):
                 m = cr.LMask(l[1], N)
                 return m.sample(lm > 0) >= 0.4 * max(1, m.area)
-            layers = [l for l in cr.buildings(job, job.pieces, N) if inside(l)]
+            layers = [l for l in cr.buildings(job, job.pieces, N, floor=True) if inside(l)]
             for l in sorted(layers, key=lambda l: (not cr.is_floor(job, l), cr.is_dark(l))):
                 if cr.is_dark(l):
                     col = [34, 84, 161]

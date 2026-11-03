@@ -268,6 +268,23 @@ def roofless(job, layer):
     return tot > 0 and cov / tot < 0.3 and all(p.get("orig", p)["top"] > yw + 2.0 for p in layer[2])
 
 
+def floor_part(job, p):
+    """what is built at walking level (walls, decks, rooms), roofs and towers above left off - stock bespin2
+    is a floor plan of the city at plaza height"""
+    if not job.cps:
+        return p
+    yw = plaza_level(job)
+    t = p["tri"]
+    sel = (t[..., 1].min(1) < yw + 10.0) & (t[..., 1].max(1) > yw - 16.0)
+    if sel.all() or not sel.any():
+        return p if sel.any() else None
+    q = dict(p)
+    q["tri"] = t[sel]
+    q["px"] = p["px"][sel]
+    q["orig"] = p
+    return q
+
+
 def upper_part(job, p):
     """what stock draws of a building standing on the plaza: the part built up above head height.
     Its paving at ground level (the walk of a colonnade, a porch) is plaza, so stays navy.
@@ -288,7 +305,7 @@ def upper_part(job, p):
     return q
 
 
-def buildings(job, pieces, N, min_foot=20.0):
+def buildings(job, pieces, N, min_foot=20.0, floor=False):
     """placed buildings -> [(top height, polygons)], lowest first, clutter left out.
     Each piece is traced on its own and simplified to straight edges; pieces of one class that overlap a lot
     are one shape, and wedges laid round a centre (a rotunda) become one round building."""
@@ -306,8 +323,12 @@ def buildings(job, pieces, N, min_foot=20.0):
             continue
         if footprint(p) < min_foot:
             continue
-        p = upper_part(job, p)
+        p = floor_part(job, p) if floor else upper_part(job, p)
+        if p is None:
+            continue
         polys = piece_polys(job, p, eps_px=0.6 / mpp, min_area_px=6 / mpp ** 2, close_px=2)
+        if floor:
+            polys = [(pp, []) for pp, hh in polys]     # towers cut at floor level are solid, not rings
         if polys:
             bld.append((p, polys))
     groups = {}
