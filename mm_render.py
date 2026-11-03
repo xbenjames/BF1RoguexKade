@@ -3,6 +3,7 @@ style "bf1": stock BF1 look (blue, scanline background, ring), as worked out fro
 style "bf2": stock BF2 look (grey floor plan the HUD tints), as worked out from the 19 stock BF2 maps."""
 import os, re, sys, time
 import numpy as np
+import mm_crisp as cr
 from PIL import Image, ImageDraw
 from scipy import ndimage as ndi
 import mm_core as mc
@@ -478,45 +479,32 @@ def render_bf1(job):
             img[m & land & inner] = NAVY
             img[m & land & ~inner] = DARKRIM
         if job.pieces:
-            m = np.asarray(fill_tris(N, np.concatenate([p["px"] for p in job.pieces]))) > 127
+            layers = cr.buildings(job, job.pieces, N)
             if job.w.boundary:
-                m &= dilate_sq(land, round(4 * U))      # stock leaves out buildings beyond the play area (tat2)
-            m = clean(m, round(2 * U), round(U), (5 * U) ** 2, (8 * U) ** 2, U * 0.75)
-            inner = erode_sq(m, max(1, round(U)))
-            img[m & inner] = BLD
-            img[m & ~inner] = EDGE
-            drawn = len(job.pieces)
+                # stock leaves out buildings beyond the play area (tat2)
+                layers = cr.keep_near(job, layers, (land * 255).astype(np.uint8), N, near_m=4.0)
+            for top, polys, _ in layers:
+                cr.draw_polys(img, polys, BLD, EDGE, rim_w=U)
+            drawn = len(layers)
         img[land & ~erode_sq(land, max(1, round(U)))] = EDGE
     elif look == "town":
         if job.w.boundary:
             img[land] = NAVY
             img[land & ~erode_sq(land, max(1, round(U)))] = EDGE
-            clip = dilate_sq(land, round(8 * U))
-            drawn = badges(job, img, job.pieces, U, clip)
+            layers = cr.keep_near(job, cr.buildings(job, job.pieces, N), (land * 255).astype(np.uint8), N, near_m=8.0)
+            for top, polys, _ in layers:
+                cr.draw_polys(img, polys, FILL, RIM, rim_w=U)
+            drawn = len(layers)
         else:
-            # no walls (naboo2): the town area (buildings + the plazas they enclose, near the CPs) dark navy,
-            # the buildings on it light with a pale rim
-            top, foot = floor_raster(job, N)
-            r = max(2, round(12.0 / (2 * job.E / N)))
-            area = morph(morph(foot, r, True), r, False)
-            area = ndi.binary_fill_holes(area)
-            hull = Image.new("L", (N, N), 0)
-            q = [tuple(job.to_px(c["pos"][0], c["pos"][2])) for c in job.cps]
-            if len(q) >= 3:
-                from math import atan2
-                cx_, cy_ = np.mean([v[0] for v in q]), np.mean([v[1] for v in q])
-                q.sort(key=lambda v: atan2(v[1] - cy_, v[0] - cx_))
-                ImageDraw.Draw(hull).polygon(q, fill=255)
-                near = dilate_sq(np.asarray(hull) > 0, max(2, round(45.0 / (2 * job.E / N))))
-                area &= near
-            area = clean(area, round(2 * U), round(2 * U), (20 * U) ** 2, (20 * U) ** 2, U)
-            img[area] = NAVY
-            img[area & ~erode_sq(area, max(1, round(U)))] = EDGE
-            m = clean(foot & dilate_sq(area, round(2 * U)), round(U), round(U), (4 * U) ** 2, (6 * U) ** 2, 0.75 * U)
-            inner = erode_sq(m, max(1, round(U)))
-            img[m] = FILL
-            img[m & ~inner] = EDGE
-            drawn = len(job.pieces)
+            # no walls (naboo2): the town block (buildings + the plazas they enclose, holding the CPs) dark navy,
+            # each building a crisp light shape with a pale rim, clutter (planters, trees, lamps) left out
+            layers = cr.buildings(job, job.pieces, N)
+            area, apoly = cr.town(job, layers, N)
+            cr.draw_polys(img, apoly, NAVY, RIM, rim_w=U)
+            layers = cr.keep_near(job, layers, area, N)
+            for top, polys, _ in layers:
+                cr.draw_polys(img, polys, FILL, RIM, rim_w=U)
+            drawn = len(layers)
     elif look == "open":
         if job.water.any():
             img[land] = FILL
