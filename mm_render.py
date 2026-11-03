@@ -336,6 +336,23 @@ class Job:
                     keep.add(lab[q[1], q[0]])
             land = np.isin(lab, list(keep)) if keep else band
             land = drop_small(land, (30 * U) ** 2, 0)
+            # a valley level round the CPs (RhenVar1): the ground within 8 m of play height, thin links cut (30 m),
+            # kept near where things were placed. Used when it holds most of the CPs.
+            import cv2
+            mpp = 2 * self.E / N
+            dh = box_blur(self.H, max(1, round(2 * U))) - self.play_height()
+            b8 = ((dh < 8) & (dh > -30)).astype(np.uint8)      # up to 8 m above play height; lower valley floor counts
+            b8 = cv2.morphologyEx(b8, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (int(60 / mpp) | 1,) * 2))
+            n8, lab8 = cv2.connectedComponents(b8)
+            qs = [self.to_px(c["pos"][0], c["pos"][2]).astype(int) for c in self.cps]
+            ins = [lab8[q[1], q[0]] for q in qs if 0 <= q[0] < N and 0 <= q[1] < N]
+            if False and ins and sum(1 for v in ins if v) >= 0.8 * len(qs):   # tried for RhenVar1: lost the ice sweep; plateau rule is closer
+                v8 = np.isin(lab8, list(set(ins) - {0})) & dilate_sq(self.object_spread(10.0), round(80 / mpp))
+                v8 = box_blur(v8.astype(np.float32), max(1, round(3 * U))) > 0.5
+                if v8.sum() > 0.05 * N * N:
+                    land = v8
+                    self.valley = True
+                    log("Land = the valley level the CPs stand in (within 8 m), near where things were placed.")
             log("No boundary; land = the plateau around the CPs (within 12 m of their height).")
         elif self.H is not None:
             lo = self.H.min()
@@ -370,7 +387,10 @@ class Job:
         mpp = 2 * self.E / N
         m = np.zeros((N, N), np.uint8)
         r = max(1, int(round(R / mpp)))
-        for o in self.objs:
+        if not hasattr(self, "_all_objs"):
+            # every layer (trees, rocks, props too): what was placed shows where the level is
+            self._all_objs = self.w.objects(list(self.w.objs.keys()))
+        for o in self._all_objs:
             q = self.to_px(o["pos"][0], o["pos"][2])
             if -r <= q[0] < N + r and -r <= q[1] < N + r:
                 cv2.circle(m, (int(q[0]), int(q[1])), r, 255, -1)
@@ -487,6 +507,13 @@ def render_bf1(job):
         if spread.any() and (spread & land).sum() < 0.85 * land.sum():
             land &= spread
             log("Land cut to where objects were placed (%d%% of the box)." % round(land.mean() * 100))
+    if look == "ground" and not job.w.boundary and not getattr(job, "valley", False) and not job.high_outside and not job.water.any() and land.any():
+        # no boundary (RhenVar2): the town island, where things were placed, if that is most of the plateau
+        spread = job.object_spread(10.0)
+        cut = spread & dilate_sq(land, round(20.0 / (2 * job.E / N)))
+        if cut.sum() >= 0.5 * land.sum():
+            land = cut
+            log("Land = where objects were placed around the plateau (%d%% of the box)." % round(land.mean() * 100))
     if look == "ground":
         base = FILL if job.high_outside else DARK      # hoth: light snow field; jungle/forest/rock maps: darker land
         img[land] = base
@@ -522,8 +549,9 @@ def render_bf1(job):
                 # stock leaves out buildings beyond the play area (tat2): keep what stands mostly on the land
                 lm = land
                 layers = [l for l in layers if cr.LMask(l[1], N).sample(lm) >= 0.5 * max(1, cr.LMask(l[1], N).area)]
-            for top, polys, _ in layers:
-                cr.draw_polys(img, polys, BLD, EDGE, rim_w=U)
+            for l in sorted(layers, key=lambda l: not cr.roofless(job, l)):
+                # roofless walls (rooms open to the sky) show as outlines on the land, like stock RhenVar2
+                cr.draw_polys(img, l[1], base if cr.roofless(job, l) else BLD, EDGE, rim_w=U)
             drawn = len(layers)
         img[land & ~erode_sq(land, max(1, round(U)))] = EDGE
     elif look == "town":

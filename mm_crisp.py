@@ -247,6 +247,27 @@ def is_floor(job, layer):
         sum(footprint(p) for p in ps) >= 400
 
 
+def roofless(job, layer):
+    """walls with no roof over them (RhenVar2 citadel rooms, ruins): stock draws these as outlines on the ground.
+    Judged by how much of the footprint has an upward face above head height."""
+    if not job.cps:
+        return False
+    from mm_render import footprint
+    yw = plaza_level(job)
+    tot = cov = 0.0
+    for p in layer[2]:
+        p = p.get("orig", p)
+        if "roof" not in p:
+            t = p["tri"]
+            n_ = np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0])
+            a = 0.5 * np.linalg.norm(n_, axis=1)
+            up = (np.abs(n_[:, 1]) > 0.7 * (2 * a + 1e-9)) & (t[..., 1].mean(1) > yw + 3.0)
+            p["roof"] = float(a[up].sum()) / max(1.0, footprint(p))
+        tot += 1
+        cov += p["roof"]
+    return tot > 0 and cov / tot < 0.3 and all(p.get("orig", p)["top"] > yw + 2.0 for p in layer[2])
+
+
 def upper_part(job, p):
     """what stock draws of a building standing on the plaza: the part built up above head height.
     Its paving at ground level (the walk of a colonnade, a porch) is plaza, so stays navy.
