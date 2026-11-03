@@ -744,10 +744,18 @@ def render_bf2(job):
     has &= top > min(cy) - 18          # and ground far below every CP (cor1 under-city)
     if outdoor and job.w.boundary:
         has &= dilate_sq(land, round(4 * U))   # buildings beyond the play area are left off (tat2)
-    if not outdoor and not job.w.boundary and job.cps and job.pieces:
-        # town with no walls (naboo2): the plazas between the buildings drawn as a darker area, like stock
-        area = town_area(job, foot)
-        img[area] = 70
+    crisp_town = not outdoor and not job.w.boundary and job.cps and job.pieces
+    if crisp_town:
+        # town with no walls (naboo2): stock BF2 naboo2 is the BF1 art in grey - the plaza 69 with a light edge,
+        # every building a crisp 125 shape with a light rim, the rotunda's water band 97
+        img[:] = 0.0
+        layers = cr.buildings(job, job.pieces, N)
+        area, apoly = cr.town(job, layers, N)
+        cr.draw_polys(img, apoly, 69.0, 190.0, rim_w=U)
+        layers = cr.keep_layers(job, layers, area, N)
+        for l in sorted(layers, key=cr.is_dark):
+            cr.draw_polys(img, l[1], 97.0 if cr.is_dark(l) else 125.0, 190.0, rim_w=U)
+        has[:] = False
     if has.any():
         rel = np.where(has, top - playH, 0.0)
         tone = np.select([rel < -9, rel < -3, rel <= 3, rel <= 9], [105, 128, 150, 178], 200).astype(np.float32)

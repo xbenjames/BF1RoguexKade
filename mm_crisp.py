@@ -258,8 +258,8 @@ def buildings(job, pieces, N, min_foot=20.0):
                 u |= m_.astype(np.uint8)
             u = cv2.morphologyEx(u * 255, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
             cs, _ = cv2.findContours(u, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-            c = max(cs, key=cv2.contourArea)
-            r = cv2.minEnclosingCircle(c)[1]
+            c = max(cs, key=cv2.contourArea) if cs else None
+            r = cv2.minEnclosingCircle(c)[1] if c is not None else 0
             if len(cs) == 1 and cv2.contourArea(c) / (np.pi * r * r + 1e-9) > 0.8:
                 for i in range(len(items)):
                     par[f(i)] = f(0)
@@ -334,7 +334,8 @@ def town(job, layers, N, close_m=14.0):
     k10 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (max(3, int(10 / mpp)),) * 2)
     area = cv2.morphologyEx(area, cv2.MORPH_OPEN, k10)
     if job.H is not None and job.cps:
-        lo = min(c["pos"][1] for c in job.cps) - 5
+        # the plaza level: the median CP (a CP down on a sunken floor must not drag it down - BF2 naboo2 rotunda)
+        lo = float(np.median([c["pos"][1] for c in job.cps])) - 5
         pit = ((job.H < lo) & (union == 0)).astype(np.uint8) * 255
         pit = cv2.morphologyEx(pit, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
         r = max(1, int(8 / mpp))
@@ -371,7 +372,8 @@ def near_pieces(job, pieces, area, N, near_m=6.0):
         if not near[pts[:, 1], pts[:, 0]].any():
             continue
         inside = area[pts[:, 1], pts[:, 0]].mean()
-        on_cp = any(cv2.pointPolygonTest(cv2.convexHull(p["px"].reshape(-1, 2).astype(np.float32)), (float(q[0]), float(q[1])), False) >= 0 for q in cps)
+        hull = cv2.convexHull(p["px"].reshape(-1, 2).astype(np.float32))
+        on_cp = any(cv2.pointPolygonTest(hull, (float(q[0]), float(q[1])), True) >= -10.0 / mpp for q in cps)
         deck = footprint(p) >= 300 and walk_area(p) >= 0.5 * footprint(p)
         landmark = footprint(p) >= 3000          # a palace beside the plaza
         if not (on_cp or inside >= 0.3 or deck or landmark):
@@ -400,7 +402,28 @@ def keep_near(job, layers, area, N, near_m=6.0):
 def keep_layers(job, layers, area, N, near_m=6.0):
     """layers with any piece passing near_pieces (so a palace keeps the add-ons merged into it)"""
     ok = {id(p) for p in near_pieces(job, [p for l in layers for p in l[2]], area, N, near_m)}
-    return [l for l in layers if any(id(p) in ok for p in l[2])]
+    keep = [any(id(p) in ok for p in l[2]) for l in layers]
+    # what stands up out of a sunken part, joined to the kept town (the naboo2 rotunda on its bridge), is kept too;
+    # low canal walls (no higher than the plaza) are not
+    if job.cps:
+        mpp = 2 * job.E / N
+        plaza = float(np.median([c["pos"][1] for c in job.cps]))
+        r = max(1, int(round(2.0 / mpp)))
+        k = np.ones((2 * r + 1,) * 2, np.uint8)
+        masks = [pmask(l[1], N) for l in layers]
+        for _ in range(4):
+            u = np.zeros((N, N), np.uint8)
+            for m, kp in zip(masks, keep):
+                if kp:
+                    u |= m.astype(np.uint8)
+            u = cv2.dilate(u, k) > 0
+            grew = False
+            for i, l in enumerate(layers):
+                if not keep[i] and l[0] >= plaza + 2.0 and (masks[i] & u).any():
+                    keep[i] = grew = True
+            if not grew:
+                break
+    return [l for l, kp in zip(layers, keep) if kp]
 
 
 def open_under(job, p, N):
