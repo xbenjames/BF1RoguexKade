@@ -289,6 +289,13 @@ class Job:
                 q = self.to_px([a[0] for a in p], [a[2] for a in p])
                 d.polygon([tuple(v) for v in q], fill=255)
             land = box_blur(np.asarray(im) / 255.0, max(1, round(3 * U))) > 0.5
+            if self.style == "bf1" and self.H is not None and (~land).any():
+                # BF1 hoth: the canyon walls outside the boundary are drawn too (as darker high ground);
+                # BF1 end1: flat forest outside the boundary is not. Tell them apart by how high the outside is.
+                out_h = float(np.median(self.H[~land])) - self.play_height()
+                if out_h > 15:
+                    land[:] = True
+                    log("The ground outside the boundary is high (%.0f m up): drawn as high ground, like stock BF1 Hoth." % out_h)
         elif self.H is not None:
             lo = self.H.min()
             land = box_blur((self.H > lo + 2).astype(np.float32), max(1, round(U))) > 0.5
