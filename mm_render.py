@@ -519,8 +519,9 @@ def render_bf1(job):
         if job.pieces:
             layers = cr.buildings(job, job.pieces, N)
             if job.w.boundary:
-                # stock leaves out buildings beyond the play area (tat2)
-                layers = cr.keep_near(job, layers, (land * 255).astype(np.uint8), N, near_m=4.0)
+                # stock leaves out buildings beyond the play area (tat2): keep what stands mostly on the land
+                lm = land
+                layers = [l for l in layers if (cr.pmask(l[1], N) & lm).sum() >= 0.5 * max(1, cr.pmask(l[1], N).sum())]
             for top, polys, _ in layers:
                 cr.draw_polys(img, polys, BLD, EDGE, rim_w=U)
             drawn = len(layers)

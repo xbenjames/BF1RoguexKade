@@ -181,7 +181,9 @@ def piece_polys(job, p, eps_px, min_area_px, close_px=1, solid=True):
         m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, k)
     polys = simplify(m, eps_px, min_area_px)
     if solid:
-        polys = [(pp, []) for pp, hh in polys]
+        # small openings in a roof are filled; a big open middle (a walled yard open to the sky - tat2 arena)
+        # stays open, as stock draws those as a ring of wall
+        polys = [(pp, [h for h in hh if cv2.contourArea(h) >= 0.2 * cv2.contourArea(pp)]) for pp, hh in polys]
     off = np.array([x0, y0], np.float32)
     return [(pp + off, [h + off for h in hh]) for pp, hh in polys]
 
