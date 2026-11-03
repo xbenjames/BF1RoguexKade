@@ -17,8 +17,8 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(TITLE)
-        self.geometry("1320x880")
-        self.minsize(1100, 720)
+        self.geometry("1280x860")
+        self.minsize(980, 640)
         self.folders = []
         self.ix = None
         self.worlds = []
@@ -87,7 +87,7 @@ class App(tk.Tk):
         self.game_cb.current(0); self.game_cb.grid(row=1, column=3, sticky="w", padx=4)
         self.game_cb.bind("<<ComboboxSelected>>", lambda e: self.update_box())
         ttk.Label(g, text="Style").grid(row=2, column=0, sticky="w")
-        self.style_cb = ttk.Combobox(g, state="readonly", width=16, values=["Auto (same as game)", "BF1 (blue)", "BF2 (grey)"])
+        self.style_cb = ttk.Combobox(g, state="readonly", width=20, values=["Auto (same as game)", "BF1 (blue)", "BF2 (grey)"])
         self.style_cb.current(0); self.style_cb.grid(row=2, column=1, sticky="w", pady=2)
         ttk.Label(g, text="Size").grid(row=2, column=2, sticky="e")
         self.size_cb = ttk.Combobox(g, state="readonly", width=10, values=["Auto", "1024", "512", "256"])
@@ -127,20 +127,22 @@ class App(tk.Tk):
         top = ttk.Frame(right); top.pack(fill="x")
         self.go_btn = ttk.Button(top, text="Generate map", command=self.generate)
         self.go_btn.pack(side="left")
-        ttk.Label(top, text="  Save to").pack(side="left")
-        self.out_var = tk.StringVar(value=self.cfg.get("out", ""))
-        ttk.Entry(top, textvariable=self.out_var, width=46).pack(side="left", padx=4)
-        ttk.Button(top, text="…", width=3, command=self.pick_out).pack(side="left")
         self.save_btn = ttk.Button(top, text="Save .tga + .option", command=self.save, state="disabled")
         self.save_btn.pack(side="left", padx=6)
         self.show_cp = tk.BooleanVar(value=True)
         ttk.Checkbutton(top, text="CPs on preview", variable=self.show_cp, command=self.show_preview).pack(side="left")
-        self.canvas = tk.Canvas(right, width=640, height=640, bg="#111", highlightthickness=0)
-        self.canvas.pack(pady=6)
+        top2 = ttk.Frame(right); top2.pack(fill="x", pady=(4, 0))
+        ttk.Label(top2, text="Save to").pack(side="left")
+        self.out_var = tk.StringVar(value=self.cfg.get("out", ""))
+        ttk.Entry(top2, textvariable=self.out_var).pack(side="left", padx=4, fill="x", expand=True)
+        ttk.Button(top2, text="…", width=3, command=self.pick_out).pack(side="left")
+        self.logbox = tk.Text(right, height=8, wrap="word", font=("Consolas", 9))
+        self.logbox.pack(side="bottom", fill="x")
         self.status = ttk.Label(right, text="Add a folder to start.")
-        self.status.pack(anchor="w")
-        self.logbox = tk.Text(right, height=10, wrap="word", font=("Consolas", 9))
-        self.logbox.pack(fill="both", expand=True)
+        self.status.pack(side="bottom", anchor="w")
+        self.canvas = tk.Canvas(right, bg="#111", highlightthickness=0)
+        self.canvas.pack(fill="both", expand=True, pady=6)
+        self.canvas.bind("<Configure>", lambda e: self.show_preview())
         for f in self.cfg.get("folders", []):
             if os.path.isdir(f):
                 self.folders.append(f); self.folder_list.insert("end", f)
@@ -343,7 +345,7 @@ class App(tk.Tk):
         if not self.result:
             return
         img, job = self.result
-        S = 640
+        S = max(64, min(self.canvas.winfo_width(), self.canvas.winfo_height()))
         pv = img.convert("RGB").resize((S, S), Image.LANCZOS)
         if self.show_cp.get():
             d = ImageDraw.Draw(pv)
