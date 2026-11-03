@@ -717,24 +717,41 @@ def render_bf2(job):
             log("Buildings cover %d%% of the ground: floor plan only, no ground drawn." % round(cover * 100))
     if outdoor:
         # natural maps: small props and plants are left off (stock fel1, dag1, end1 show only the ground)
-        job.pieces = big
+        job.pieces = [p for p in big if not cr.CLUTTER.search(p["cls"])]
     img = np.full((N, N), BG_OUT if outdoor else BG_IN, np.float32)
     playH = job.play_height()
     land = np.zeros((N, N), bool)
     if outdoor:
         land = land0
+        # stock BF2 draws the ground the level was built on: where things were placed (dag1's swamp island,
+        # fel1, end1 - checked against all three). Water inside it is drawn dark, not cut out.
+        spread = job.object_spread(12.0)
+        if spread.any():
+            if getattr(job, "island", False) and spread.mean() < 0.15:
+                # islands: the dry land near where things stand, plus the decks over the water (kas2)
+                spread = spread | (land0 & dilate_sq(spread, round(40.0 / (2 * job.E / N))))
+                base = np.ones((N, N), bool)
+            elif getattr(job, "island", False):
+                base = np.ones((N, N), bool)
+            else:
+                base = land0
+            if job.w.boundary:
+                base = base & dilate_sq(land0 | job.water, round(20.0 / (2 * job.E / N)))
+            cut = spread & base
+            loose = not job.w.boundary or max(len(b) for b in job.w.boundary) <= 6
+            if cut.sum() > 0.05 * N * N and (loose or cut.sum() >= 0.5 * land0.sum() or cut.sum() >= 0.15 * N * N):
+                land = cut
+                log("Ground = where objects were placed (%d%% of the box)." % round(land.mean() * 100))
         H = box_blur(job.H, max(1, round(1.5 * U))) if job.H is not None else None
         g = np.full((N, N), 138.0, np.float32)
         if H is not None:
-            # lower ground darker, a little lighter up the slopes (stock fel1 / hoth / dag1 / kas2)
-            # stock keeps the play ground one flat grey; only pits / river beds well below it go dark (fel1, dag1)
-            # "well below" is judged against the ground around it (~40 m), so a whole valley stays light
+            # only pits / river beds well below the ground around them go dark (fel1, dag1), plus water
             r = max(2, round(60.0 / (2 * job.E / N)))
             local = ndi.uniform_filter(H, 2 * r + 1, mode="nearest")
-            g = np.where(H < local - 5, 82, 138).astype(np.float32)
+            dark = (H < local - 9) | job.water
+            dark = clean(dark, round(2 * U), round(2 * U), (12 * U) ** 2, (12 * U) ** 2, U)
+            g = np.where(dark, 72, 138).astype(np.float32)
         img[land] = g[land]
-        if job.water.any():
-            img[job.water & ~land] = 68
         # cliffs too steep to walk: drawn like the outside (stock geo1 / hoth canyon walls)
         if H is not None:
             gy, gx = np.gradient(job.H, 2 * job.E / N)
@@ -742,9 +759,9 @@ def render_bf2(job):
             steep = morph(morph(steep, round(U), False), round(1.5 * U), True)
             img[land & steep] = np.minimum(img[land & steep], 92)
     # rock: dark ground, on outdoor maps only
-    if job.rocks and outdoor:
+    if job.rocks and outdoor and False:   # stock BF2 outdoor maps don't mark rock or tree groups (dag1, fel1, end1)
         m = np.asarray(fill_tris(N, np.concatenate([r["px"] for r in job.rocks]))) > 127
-        m = clean(m, round(2 * U), round(U), (6 * U) ** 2, (8 * U) ** 2, U)
+        m = clean(m, round(3 * U), round(2 * U), (14 * U) ** 2, (14 * U) ** 2, U)   # only big rock masses, no speckle
         img[m & land] = np.minimum(img[m & land], 96)
     # buildings as floor plans: few flat tones (stock maps use 1-3 greys per map, not a height ramp)
     top, foot = floor_raster(job, N)
@@ -754,7 +771,7 @@ def render_bf2(job):
     has &= top > min(cy) - 18          # and ground far below every CP (cor1 under-city)
     if outdoor and job.w.boundary:
         has &= dilate_sq(land, round(4 * U))   # buildings beyond the play area are left off (tat2)
-    crisp_town = not outdoor and not job.w.boundary and job.cps and job.pieces
+    crisp_town = not outdoor and job.ground == "on" and not job.w.boundary and job.cps and job.pieces
     if crisp_town:
         # town with no walls (naboo2): stock BF2 naboo2 is the BF1 art in grey - the plaza 69 with a light edge,
         # every building a crisp 125 shape with a light rim, the rotunda's water band 97
