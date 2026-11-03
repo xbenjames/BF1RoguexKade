@@ -1,0 +1,37 @@
+name: build MinimapMaker.exe
+on:
+  push:
+    branches: [minimap-maker]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: python -m pip install numpy pillow scipy pyinstaller
+      - name: Build
+        shell: bash
+        run: |
+          mkdir -p dist
+          python -m PyInstaller --noconfirm --onefile --windowed --name MinimapMaker --add-data "assets;assets" MinimapMaker.py > dist/build.log 2>&1 || (cat dist/build.log; exit 1)
+          tail -5 dist/build.log
+          ls -la dist
+      - name: Smoke test (window opens)
+        shell: bash
+        run: python smoke.py 2>&1 | tee dist/smoke.log
+      - name: Publish to builds branch
+        shell: bash
+        run: |
+          git config user.name "build bot"; git config user.email "actions@github.com"
+          mkdir /tmp/pub && cp dist/MinimapMaker.exe dist/screenshot.png dist/build.log dist/smoke.log /tmp/pub/ || true
+          (certutil -hashfile dist/MinimapMaker.exe MD5; echo "commit $GITHUB_SHA") > /tmp/pub/build_info.txt
+          git checkout --orphan minimap-builds
+          git rm -rf . > /dev/null
+          cp /tmp/pub/* .
+          git add -A && git commit -m "MinimapMaker build for $GITHUB_SHA" && git push -f origin minimap-builds
