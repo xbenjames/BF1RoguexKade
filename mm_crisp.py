@@ -376,8 +376,8 @@ def buildings(job, pieces, N, min_foot=20.0):
             hull = cv2.convexHull(pts)
             (cx, cy), r = cv2.minEnclosingCircle(hull)
             if cv2.contourArea(hull) / (np.pi * r * r + 1e-9) > 0.8:
-                t = np.linspace(0, 2 * np.pi, max(24, int(r)), endpoint=False)
-                l = (l[0], [(np.stack([cx + r * np.cos(t), cy + r * np.sin(t)], 1).astype(np.float32), [])], l[2])
+                # the hull of the building with its add-ons; an octagon stays an octagon (yavin1 temple)
+                l = (l[0], [(shape_poly(hull, cv2.contourArea(hull), max(1.0, 0.02 * r), 0.97), [])], l[2])
         out.append(l)
     return out
 

@@ -507,6 +507,13 @@ def render_bf1(job):
         if spread.any() and (spread & land).sum() < 0.85 * land.sum():
             land &= spread
             log("Land cut to where objects were placed (%d%% of the box)." % round(land.mean() * 100))
+    elif look == "ground" and job.w.boundary and max(len(b) for b in job.w.boundary) <= 12 and not job.high_outside \
+            and not job.water.any():
+        # a rough boundary of a dozen points (yavin1): stock draws the ground round everything placed,
+        # spilling past the boundary, with soft edges
+        spread = job.object_spread(24.0)
+        land = box_blur((land | spread).astype(np.float32), max(1, round(6 * U))) > 0.5
+        log("Land = boundary plus where things were placed (%d%% of the box)." % round(land.mean() * 100))
     if look == "ground" and not job.w.boundary and not getattr(job, "valley", False) and not job.high_outside and not job.water.any() and land.any():
         # no boundary (RhenVar2): the town island, where things were placed, if that is most of the plateau
         spread = job.object_spread(10.0)
@@ -515,7 +522,7 @@ def render_bf1(job):
             land = cut
             log("Land = where objects were placed around the plateau (%d%% of the box)." % round(land.mean() * 100))
     if look == "ground":
-        base = FILL if job.high_outside else DARK      # hoth: light snow field; jungle/forest/rock maps: darker land
+        base = FILL if job.high_outside else NAVY      # hoth: light snow field; jungle/forest/rock maps: navy land (stock yavin1/RhenVar)
         img[land] = base
         step = o.contours
         if job.high_outside and job.H is not None:
@@ -536,6 +543,8 @@ def render_bf1(job):
             ed = dilate_sq(ed, max(0, round(U / 2)))
             img[ed & land] = mix(FILL, RIM, 0.5)
             step = 0
+        if not job.high_outside:
+            step = 0          # stock draws height lines only on Hoth
         if step and step > 0 and job.H is not None:
             H = box_blur(job.H, max(1, round(2 * U)))
             lev = np.floor(H / step).astype(np.int32)
