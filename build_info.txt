@@ -1,0 +1,4 @@
+MD5 hash of dist/MinimapMaker.exe:
+ac3d621063cb384495e8ceca301ed625
+CertUtil: -hashfile command completed successfully.
+commit 390dfed511c74fa43a03c0acc00e60beb07d68ea
