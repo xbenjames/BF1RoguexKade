@@ -228,7 +228,7 @@ class Job:
         self.ter = None
         if w.ter_path:
             try:
-                self.ter = w.terrain(self.objs)
+                self.ter = w.terrain(w.objects(list(w.objs.keys())))   # every layer: trees and rocks pin the height grid best
                 t = self.ter
                 log("Terrain %s: %dx%d grid, %g m cells%s" % (os.path.basename(w.ter_path), t.n, t.n, t.gs,
                     "" if t.ho == t.hdr else " (heights found at byte %d, not %d)" % (t.ho, t.hdr)))
@@ -280,7 +280,11 @@ class Job:
                         nc += 1
             frac = nc / len(self.cps) if self.cps else 0
             ofrac = near / allc if allc else 0
-            g = "on" if (self.ter is not None and (frac >= 0.34 or ofrac >= 0.25)) else "off"
+            isl = False
+            if self.ter is not None and getattr(self.ter, "water_h", None) is not None and self.ter.h is not None:
+                a = (self.ter.h > self.ter.water_h).mean()
+                isl = 0.05 <= a <= 0.95 and allc and near / allc >= 0.1   # islands in a sea (kas2): the land shows even if the CPs stand on platforms
+            g = "on" if (self.ter is not None and (frac >= 0.34 or ofrac >= 0.25 or isl)) else "off"
             log("Ground: %s (%d of %d CPs and %d%% of objects stand on the terrain%s)" %
                 ("drawn" if g == "on" else "hidden", nc, len(self.cps), round(ofrac * 100), "" if self.ter is not None else "; no terrain loaded"))
         self.ground = g
@@ -341,7 +345,16 @@ class Job:
             land[:] = True
             log("No boundary or terrain; the whole box counts as ground.")
         self.water = np.zeros((N, N), bool)
-        if self.H is not None:
+        wh = getattr(self.ter, "water_h", None) if self.ter is not None else None
+        if self.H is not None and wh is not None and 0.05 <= (self.H < wh).mean() < 0.95:
+            # the terrain's own water layer (kashyyyk1 lake, kas2 sea): land is what stands above it
+            keep = box_blur((self.H > wh).astype(np.float32), max(1, round(1.5 * U))) > 0.5
+            self.water = ~keep
+            # the islands are drawn whole, beyond the boundary too (stock kas2, kashyyyk1)
+            land = keep.copy()
+            self.island = True
+            log("Water layer at %.1f m: %d%% of the box is under water." % (wh, round((~keep).mean() * 100)))
+        elif self.H is not None:
             lo = self.H.min()
             flat = (self.H < lo + 1).mean()
             if 0.15 <= flat < 0.9:
@@ -350,6 +363,24 @@ class Job:
                 land &= keep
                 log("Water: %d%% of the map sits at the lowest level, drawn as sea." % round(flat * 100))
         return land
+
+    def object_spread(self, R):
+        import cv2
+        N = self.N
+        mpp = 2 * self.E / N
+        m = np.zeros((N, N), np.uint8)
+        r = max(1, int(round(R / mpp)))
+        for o in self.objs:
+            q = self.to_px(o["pos"][0], o["pos"][2])
+            if -r <= q[0] < N + r and -r <= q[1] < N + r:
+                cv2.circle(m, (int(q[0]), int(q[1])), r, 255, -1)
+        k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1,) * 2)
+        m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, k)
+        ff = np.pad(m, 1).copy()
+        cv2.floodFill(ff, None, (0, 0), 128)
+        m = np.where(ff[1:-1, 1:-1] == 128, 0, 255).astype(np.uint8)
+        m = drop_small(m > 0, (8 * r) ** 2, 1)
+        return box_blur(m.astype(np.float32), max(1, int(1.5 * r))) > 0.5
 
     def play_height(self):
         ys = sorted(c["pos"][1] for c in self.cps)
@@ -438,7 +469,7 @@ def render_bf1(job):
             look = "floating"          # no usable ground under the buildings (myg1, tan1, uta1 interiors)
         elif cover >= 0.3:
             look = "town"
-        elif (land.mean() >= 0.65 or (job.water.any() and land.mean() >= 0.45)) and cover < 0.15 and not job.high_outside:
+        elif getattr(job, "island", False) or ((land.mean() >= 0.65 or (job.water.any() and land.mean() >= 0.3)) and cover < 0.15 and not job.high_outside):
             look = "open"
         else:
             look = "ground"
@@ -449,6 +480,13 @@ def render_bf1(job):
         bg = Image.open(res_path("bf1_bg.png")).convert("RGB").resize((N, N), Image.NEAREST)
         img = np.asarray(bg).astype(np.float32).copy()
     drawn = 0
+    if look == "ground" and job.w.boundary and max(len(b) for b in job.w.boundary) <= 6 and not job.high_outside and not job.water.any():
+        # stock BF1 draws the land the level was built on: where things were placed (end1's forest island,
+        # a boundary of a few points drawn loosely round it). The loose boundary and empty terrain beyond it are left out.
+        spread = job.object_spread(10.0)
+        if spread.any() and (spread & land).sum() < 0.85 * land.sum():
+            land &= spread
+            log("Land cut to where objects were placed (%d%% of the box)." % round(land.mean() * 100))
     if look == "ground":
         base = FILL if job.high_outside else DARK      # hoth: light snow field; jungle/forest/rock maps: darker land
         img[land] = base
@@ -492,8 +530,12 @@ def render_bf1(job):
             img[land] = NAVY
             img[land & ~erode_sq(land, max(1, round(U)))] = EDGE
             layers = cr.keep_near(job, cr.buildings(job, job.pieces, N), (land * 255).astype(np.uint8), N, near_m=8.0)
-            for top, polys, _ in layers:
-                cr.draw_polys(img, polys, FILL, RIM, rim_w=U)
+            for l in sorted(layers, key=cr.is_dark):
+                if cr.is_dark(l):
+                    col = [34, 84, 161]
+                else:
+                    col = FILL
+                cr.draw_polys(img, l[1], col, RIM, rim_w=U)
             drawn = len(layers)
         else:
             # no walls (naboo2): the town block (buildings + the plazas they enclose, holding the CPs) dark navy,
@@ -501,9 +543,13 @@ def render_bf1(job):
             layers = cr.buildings(job, job.pieces, N)
             area, apoly = cr.town(job, layers, N)
             cr.draw_polys(img, apoly, NAVY, RIM, rim_w=U)
-            layers = cr.buildings(job, cr.near_pieces(job, job.pieces, area, N), N)
-            for top, polys, _ in layers:
-                cr.draw_polys(img, polys, FILL, RIM, rim_w=U)
+            layers = cr.keep_layers(job, layers, area, N)
+            for l in sorted(layers, key=cr.is_dark):
+                if cr.is_dark(l):
+                    col = [34, 84, 161]
+                else:
+                    col = FILL
+                cr.draw_polys(img, l[1], col, RIM, rim_w=U)
             drawn = len(layers)
     elif look == "open":
         if job.water.any():

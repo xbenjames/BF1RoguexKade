@@ -261,6 +261,13 @@ class Terrain:
             if not (best > base + 0.15 and best > 0.4):
                 ho = hdr
         self.ver, self.n, self.gs, self.hs, self.ho, self.hdr = ver, n, gs, hs, ho, hdr
+        # water layer 1 (the sea / lake): height at byte 1276 in the header (layers are 68 bytes from 1208)
+        wo = 1276 if ver == 21 else 1277
+        self.water_h = None
+        if len(d) > wo + 4:
+            wh = struct.unpack_from("<f", d, wo)[0]
+            if np.isfinite(wh) and 0.5 <= abs(wh) < 5000:
+                self.water_h = float(wh)
         self.h = grid(ho)
 
     def sample(self, x, z):

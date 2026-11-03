@@ -8,7 +8,14 @@ import cv2
 
 CLUTTER = re.compile(r"planter|lamp|lampost|post|tree|leaf|flower|plant|bush|shrub|grass|fern|vine|bench|chair|table|crate|barrel|"
                      r"box|sign|banner|flag|light|torch|debris|rubble|rock|stone|pebble|weed|fx|mist|cloud|sky|dust|god|decal|"
-                     r"billboard|reflection|turret|gun|console|terminal|panel|droid|speeder|ship|fighter|vehicle|spawn|recharge|item|holo", re.I)
+                     r"billboard|log|trunk|stump|fallen|turret|gun|console|terminal|panel|droid|speeder|ship|fighter|vehicle|spawn|recharge|item|holo", re.I)
+
+
+DARK = re.compile(r"reflection|water|pool", re.I)     # drawn in the darker band blue (naboo2 rotunda ring)
+
+
+def is_dark(layer):
+    return any(DARK.search(p["cls"]) for p in layer[2])
 
 
 def tri_mask(px, shape, ss=1.0):
@@ -185,6 +192,26 @@ def pmask(polys, N):
     return m > 127
 
 
+def upper_part(job, p):
+    """what stock draws of a building standing on the plaza: the part built up above head height.
+    Its paving at ground level (the walk of a colonnade, a porch) is plaza, so stays navy.
+    Low things (fountains, steps) and pieces rising from below the plaza (canal sides) are drawn whole."""
+    if not job.cps:
+        return p
+    yw = min(c["pos"][1] for c in job.cps)
+    t = p["tri"]
+    if t[..., 1].min() < yw - 2.0 or t[..., 1].max() < yw + 4.0:
+        return p
+    sel = t[..., 1].min(1) > yw + 4.0       # wholly above head height: roofs and upper walls, not posts
+    if sel.all() or not sel.any():
+        return p
+    q = dict(p)
+    q["tri"] = t[sel]
+    q["px"] = p["px"][sel]
+    q["orig"] = p
+    return q
+
+
 def buildings(job, pieces, N, min_foot=20.0):
     """placed buildings -> [(top height, polygons)], lowest first, clutter left out.
     Each piece is traced on its own and simplified to straight edges; pieces of one class that overlap a lot
@@ -193,8 +220,17 @@ def buildings(job, pieces, N, min_foot=20.0):
     from mm_render import footprint
     bld = []
     for p in pieces:
-        if CLUTTER.search(p["cls"]) or footprint(p) < min_foot:
+        if CLUTTER.search(p["cls"]):
             continue
+        if DARK.search(p["cls"]):
+            # water / reflection planes stand upright: take their outline seen from above
+            h = cv2.convexHull(p["px"].reshape(-1, 2).astype(np.float32)).reshape(-1, 2)
+            if cv2.contourArea(h) > 1:
+                bld.append((p, [(h, [])]))
+            continue
+        if footprint(p) < min_foot:
+            continue
+        p = upper_part(job, p)
         polys = piece_polys(job, p, eps_px=0.6 / mpp, min_area_px=6 / mpp ** 2, close_px=2)
         if polys:
             bld.append((p, polys))
@@ -243,16 +279,37 @@ def buildings(job, pieces, N, min_foot=20.0):
     # small add-ons sitting mostly on a taller building (the palace's corner bulges) are part of it: stock never shows them
     masks = [pmask(l[1], N) for l in layers]
     keep = []
+    hid = {}
     for i, l in enumerate(layers):
         a = masks[i].sum()
         hidden = False
+        if is_dark(l):
+            keep.append(i)
+            continue
         for j, l2 in enumerate(layers):
             if j != i and masks[j].sum() > 8 * a and (masks[i] & masks[j]).sum() > 0.4 * a:
                 hidden = True
                 break
         if not hidden:
-            keep.append(l)
-    return keep
+            keep.append(i)
+        else:
+            hid.setdefault(j, []).append(i)
+    out = []
+    for i, l in enumerate(layers):
+        if i not in keep:
+            continue
+        if i in hid:
+            m = masks[i].copy()
+            for k in hid[i]:
+                m |= masks[k]
+            pts = np.argwhere(m)[:, ::-1].astype(np.float32)
+            hull = cv2.convexHull(pts)
+            (cx, cy), r = cv2.minEnclosingCircle(hull)
+            if cv2.contourArea(hull) / (np.pi * r * r + 1e-9) > 0.8:
+                t = np.linspace(0, 2 * np.pi, max(24, int(r)), endpoint=False)
+                l = (l[0], [(np.stack([cx + r * np.cos(t), cy + r * np.sin(t)], 1).astype(np.float32), [])], l[2])
+        out.append(l)
+    return out
 
 
 def town(job, layers, N, close_m=14.0):
@@ -266,6 +323,14 @@ def town(job, layers, N, close_m=14.0):
     union = cv2.morphologyEx(union, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
     seeds = [job.to_px(c["pos"][0], c["pos"][2]) for c in job.cps]
     area = town_block([union], seeds, int(round(close_m / mpp)), N)
+    # a big building holding no CP (the naboo2 palace) is a landmark beside the plaza, not plaza
+    cut = np.zeros((N, N), np.uint8)
+    for top, polys, ps in layers:
+        m = pmask(polys, N)
+        if m.sum() > 0.02 * N * N and not any(m[int(np.clip(s_[1], 0, N - 1)), int(np.clip(s_[0], 0, N - 1))] for s_ in seeds):
+            r = max(1, int(10 / mpp))
+            cut |= cv2.dilate(m.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1,) * 2))
+    area[cut > 0] = 0
     k10 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (max(3, int(10 / mpp)),) * 2)
     area = cv2.morphologyEx(area, cv2.MORPH_OPEN, k10)
     if job.H is not None and job.cps:
@@ -281,6 +346,12 @@ def town(job, layers, N, close_m=14.0):
             area = np.isin(lab, list(keep)).astype(np.uint8) * 255
     k20 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (max(3, int(16 / mpp)) | 1,) * 2)
     area = cv2.morphologyEx(area, cv2.MORPH_CLOSE, k20)
+    area[cut > 0] = 0
+    area = cv2.morphologyEx(area, cv2.MORPH_OPEN, k10)
+    n, lab = cv2.connectedComponents(area)
+    keep = {lab[int(s_[1]), int(s_[0])] for s_ in seeds if 0 <= s_[0] < N and 0 <= s_[1] < N} - {0}
+    if keep:
+        area = np.isin(lab, list(keep)).astype(np.uint8) * 255
     polys = simplify(area, 3.0 / mpp, 400 / mpp ** 2, snap_rect=0.97)
     area = pmask(polys, N).astype(np.uint8) * 255
     return area, polys
@@ -289,17 +360,22 @@ def town(job, layers, N, close_m=14.0):
 def near_pieces(job, pieces, area, N, near_m=6.0):
     """pieces on or beside the play area; pieces well below the CPs and off the area (canal walls) left out"""
     mpp = 2 * job.E / N
-    r = int(near_m / mpp)
+    r = int(max(near_m, 12.0) / mpp)
     near = cv2.dilate(area, np.ones((2 * r + 1,) * 2, np.uint8))
-    lo = min(c["pos"][1] for c in job.cps) - 5 if job.cps else -1e9
+    from mm_render import footprint, walk_area
+    cps = [job.to_px(c["pos"][0], c["pos"][2]) for c in job.cps]
     out = []
     for p in pieces:
         c = p["px"].reshape(-1, 2).mean(0).astype(int).clip(0, N - 1)
         pts = p["px"].reshape(-1, 2).astype(int).clip(0, N - 1)
         if not near[pts[:, 1], pts[:, 0]].any():
             continue
-        if p["top"] < lo and not area[c[1], c[0]]:
-            continue
+        inside = area[pts[:, 1], pts[:, 0]].mean()
+        on_cp = any(cv2.pointPolygonTest(cv2.convexHull(p["px"].reshape(-1, 2).astype(np.float32)), (float(q[0]), float(q[1])), False) >= 0 for q in cps)
+        deck = footprint(p) >= 300 and walk_area(p) >= 0.5 * footprint(p)
+        landmark = footprint(p) >= 3000          # a palace beside the plaza
+        if not (on_cp or inside >= 0.3 or deck or landmark):
+            continue                  # stock leaves out what stands off the play area (towers along the canal)
         out.append(p)
     return out
 
@@ -319,3 +395,55 @@ def keep_near(job, layers, area, N, near_m=6.0):
             continue
         out.append((top, polys, ps))
     return out
+
+
+def keep_layers(job, layers, area, N, near_m=6.0):
+    """layers with any piece passing near_pieces (so a palace keeps the add-ons merged into it)"""
+    ok = {id(p) for p in near_pieces(job, [p for l in layers for p in l[2]], area, N, near_m)}
+    return [l for l in layers if any(id(p) in ok for p in l[2])]
+
+
+def open_under(job, p, N):
+    """a roof on pillars (naboo2 colonnade): at no height near the ground do its walls close round its footprint.
+    Slices of the upright faces are taken 0-12 m above walking level (the lowest CP); each is closed 1 m and its
+    holes filled; the best enclosed share of the footprint decides it."""
+    if "open" in p:
+        return p["open"]
+    t = p["tri"]
+    yw = min(c["pos"][1] for c in job.cps) - 1.0 if job.cps else t[..., 1].min()
+    y0 = max(t[..., 1].min(), yw)
+    mpp = 2 * job.E / N
+    px = p["px"]
+    x0 = int(np.floor(px[..., 0].min())) - 4; yy0 = int(np.floor(px[..., 1].min())) - 4
+    x1 = int(np.ceil(px[..., 0].max())) + 5; yy1 = int(np.ceil(px[..., 1].max())) + 5
+    off = np.array([x0, yy0])
+    full = tri_mask(px - off, (yy1 - yy0, x1 - x0))
+    full = cv2.morphologyEx(full, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
+    nf = max(1, (full > 0).sum())
+    n_ = np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0])
+    upright = np.abs(n_[:, 1]) < 0.5 * (np.linalg.norm(n_, axis=1) + 1e-9)
+    k = max(1, int(round(1.5 / mpp)))       # closes doorways
+    best = 0.0
+    for lv in (0.5, 2.5, 4.5, 6.5, 8.5, 10.5):
+        sel = (t[..., 1].min(1) < y0 + lv + 2.5) & (t[..., 1].max(1) > y0 + lv) & upright
+        if not sel.any():
+            continue
+        gp = job.to_px(t[sel][..., 0], t[sel][..., 2]) - off
+        m = np.zeros(full.shape, np.uint8)
+        for tri in np.round(gp * 16).astype(np.int32):
+            cv2.polylines(m, [tri], True, 255, 1, cv2.LINE_8, 4)
+        m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, np.ones((2 * k + 1,) * 2, np.uint8))
+        # walls on three sides (an open shop front) still make a building: measure the hull of the walls
+        pts = np.argwhere(m > 0)[:, ::-1].astype(np.float32)
+        if len(pts) >= 3:
+            hm = np.zeros_like(m)
+            cv2.fillPoly(hm, [cv2.convexHull(pts).astype(np.int32)], 255)
+            best = max(best, ((hm > 0) & (full > 0)).sum() / nf)
+    p["ratio"] = best
+    # only pieces standing at walking level (canal pieces rise from far below and are solid walls)
+    p["open"] = bool(best < 0.35 and t[..., 1].min() > yw - 2.0)
+    return p["open"]
+
+
+def is_open(job, layer, N):
+    return all(open_under(job, p, N) for p in layer[2])
