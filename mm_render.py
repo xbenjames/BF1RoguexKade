@@ -529,10 +529,17 @@ def render_bf1(job):
         if job.w.boundary:
             img[land] = NAVY
             img[land & ~erode_sq(land, max(1, round(U)))] = EDGE
-            layers = cr.keep_near(job, cr.buildings(job, job.pieces, N), (land * 255).astype(np.uint8), N, near_m=8.0)
-            for l in sorted(layers, key=cr.is_dark):
+            # only what stands mostly inside the walls: the towers of the skyline beyond them are scenery (bespin2)
+            lm = land.astype(np.uint8)
+            def inside(l):
+                m = cr.pmask(l[1], N)
+                return (m & (lm > 0)).sum() >= 0.4 * max(1, m.sum())
+            layers = [l for l in cr.buildings(job, job.pieces, N) if inside(l)]
+            for l in sorted(layers, key=lambda l: (not cr.is_floor(job, l), cr.is_dark(l))):
                 if cr.is_dark(l):
                     col = [34, 84, 161]
+                elif cr.is_floor(job, l):
+                    col = NAVY
                 else:
                     col = FILL
                 cr.draw_polys(img, l[1], col, RIM, rim_w=U)
@@ -544,9 +551,11 @@ def render_bf1(job):
             area, apoly = cr.town(job, layers, N)
             cr.draw_polys(img, apoly, NAVY, RIM, rim_w=U)
             layers = cr.keep_layers(job, layers, area, N)
-            for l in sorted(layers, key=cr.is_dark):
+            for l in sorted(layers, key=lambda l: (not cr.is_floor(job, l), cr.is_dark(l))):
                 if cr.is_dark(l):
                     col = [34, 84, 161]
+                elif cr.is_floor(job, l):
+                    col = NAVY
                 else:
                     col = FILL
                 cr.draw_polys(img, l[1], col, RIM, rim_w=U)
@@ -753,8 +762,8 @@ def render_bf2(job):
         area, apoly = cr.town(job, layers, N)
         cr.draw_polys(img, apoly, 69.0, 190.0, rim_w=U)
         layers = cr.keep_layers(job, layers, area, N)
-        for l in sorted(layers, key=cr.is_dark):
-            cr.draw_polys(img, l[1], 97.0 if cr.is_dark(l) else 125.0, 190.0, rim_w=U)
+        for l in sorted(layers, key=lambda l: (not cr.is_floor(job, l), cr.is_dark(l))):
+            cr.draw_polys(img, l[1], 97.0 if cr.is_dark(l) else (69.0 if cr.is_floor(job, l) else 125.0), 190.0, rim_w=U)
         has[:] = False
     if has.any():
         rel = np.where(has, top - playH, 0.0)

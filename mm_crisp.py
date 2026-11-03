@@ -7,7 +7,7 @@ import numpy as np
 import cv2
 
 CLUTTER = re.compile(r"planter|lamp|lampost|post|tree|leaf|flower|plant|bush|shrub|grass|fern|vine|bench|chair|table|crate|barrel|"
-                     r"box|sign|banner|flag|light|torch|debris|rubble|rock|stone|pebble|weed|fx|mist|cloud|sky|dust|god|decal|"
+                     r"box|sign|banner|flag|light|torch|debris|rubble|rock|stone|pebble|weed|fx|mist|cloud|sky(?!way)|dust|god|decal|"
                      r"billboard|log|trunk|stump|fallen|turret|gun|console|terminal|panel|droid|speeder|ship|fighter|vehicle|spawn|recharge|item|holo", re.I)
 
 
@@ -192,13 +192,30 @@ def pmask(polys, N):
     return m > 127
 
 
+def plaza_level(job):
+    """the level people walk on: the median CP height (a CP down in a pit or up on a deck doesn't move it)"""
+    return float(np.median([c["pos"][1] for c in job.cps])) if job.cps else 0.0
+
+
+def is_floor(job, layer):
+    """a paved floor at plaza level with nothing built above head height (bespin2 courtyard): stock shows it as
+    part of the plaza - navy with a light edge - not as a building"""
+    if not job.cps:
+        return False
+    from mm_render import footprint
+    yw = plaza_level(job)
+    ps = [p.get("orig", p) for p in layer[2]]
+    return all(p["top"] <= yw + 1.0 or (p["top"] <= yw + 4.0 and p["ymin"] >= yw - 12.0) for p in ps) and \
+        sum(footprint(p) for p in ps) >= 400
+
+
 def upper_part(job, p):
     """what stock draws of a building standing on the plaza: the part built up above head height.
     Its paving at ground level (the walk of a colonnade, a porch) is plaza, so stays navy.
     Low things (fountains, steps) and pieces rising from below the plaza (canal sides) are drawn whole."""
     if not job.cps:
         return p
-    yw = min(c["pos"][1] for c in job.cps)
+    yw = plaza_level(job)
     t = p["tri"]
     if t[..., 1].min() < yw - 2.0 or t[..., 1].max() < yw + 4.0:
         return p

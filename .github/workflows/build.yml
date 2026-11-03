@@ -14,12 +14,12 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install
-        run: python -m pip install numpy pillow scipy pyinstaller
+        run: python -m pip install numpy pillow scipy opencv-python-headless pyinstaller
       - name: Build
         shell: bash
         run: |
           mkdir -p dist
-          python -m PyInstaller --noconfirm --onefile --windowed --name MinimapMaker --add-data "assets;assets" MinimapMaker.py > dist/build.log 2>&1 || (cat dist/build.log; exit 1)
+          python -m PyInstaller --noconfirm --onefile --windowed --name MinimapMaker --add-data "assets;assets" --hidden-import mm_crisp --hidden-import cv2 MinimapMaker.py > dist/build.log 2>&1 || (cat dist/build.log; exit 1)
           tail -5 dist/build.log
           ls -la dist
       - name: Smoke test (window opens)
